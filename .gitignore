@@ -1,0 +1,21 @@
+# 密钥与模型路由（宪章原则 VI：.env 必须忽略，只保留 .env.example）
+.env
+
+# uv / Python
+.venv/
+__pycache__/
+*.py[cod]
+.python-version
+
+# SQLite 运行时数据
+narrative_sim.db
+*.db
+
+# 仿真导出产物
+exports/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
