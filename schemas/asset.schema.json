@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "asset.schema.json",
+  "title": "资产契约",
+  "description": "叙事仿真系统的资产（角色/道具/场景/时代）入库契约。事件流与视频管线只引用 asset_id。",
+  "type": "object",
+  "required": ["asset_id", "type", "name", "provenance"],
+  "properties": {
+    "asset_id": {
+      "type": "string",
+      "pattern": "^(char|prop|scene|epoch)_[a-z0-9_]+$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["character", "prop", "scene", "epoch"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "appearance": {
+      "type": "object",
+      "required": ["visual_prompt"],
+      "properties": {
+        "visual_prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "预生成的英文视觉提示词骨架"
+        },
+        "description": { "type": "string" },
+        "attire": { "type": "string" },
+        "props": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "persona_spec": {
+      "type": "object",
+      "required": ["age", "occupation", "personality", "beliefs", "speech_style"],
+      "properties": {
+        "age": { "type": ["integer", "string"] },
+        "occupation": { "type": "string" },
+        "personality": { "type": ["string", "array"] },
+        "beliefs": { "type": ["string", "array"] },
+        "speech_style": { "type": "string" }
+      }
+    },
+    "historical_context": {
+      "type": "object",
+      "properties": {
+        "epoch": { "type": "string" },
+        "region": { "type": "string" },
+        "sources": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "来源 URL，回溯纠错用"
+        }
+      }
+    },
+    "reference_images": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["researched_at", "retriever", "model", "confidence"],
+      "properties": {
+        "researched_at": { "type": "string" },
+        "retriever": { "type": "string" },
+        "model": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "verified", "deprecated"],
+      "default": "draft"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "character" } }
+      },
+      "then": {
+        "required": ["appearance", "persona_spec"]
+      }
+    }
+  ]
+}
