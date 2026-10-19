@@ -16,8 +16,26 @@ uv run python scripts/run_minimal_chain.py # 3. 跑最小链路，末行输出�
 M1 全程离线、无需密钥（Mock 角色后端）。运行测试：
 
 ```bash
-uv run pytest -q
+uv run pytest -q    # 标注 real 的用例在无密钥时自动跳过
 ```
+
+## 真后端链路（M2，TinyTroupe）
+
+1. 在 `.env` 填入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`（或 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`，由后端桥接）
+2. **cwd 必须是项目根目录**（TinyTroupe 读 `./config.ini`，读不到会静默用包内默认模型）
+3. 运行：
+
+```bash
+uv run python scripts/run_real_chain.py
+```
+
+末行输出「验收通过」，token 用量写入 `runs.token_cost` 可查。
+`config.ini` 控制着动作质量校验与并发，勿删。
+
+已知取舍：TinyTroupe 的语义记忆（向量检索）当前降级为本地列表 —— DeepSeek 无
+embeddings API，其默认 embedding 客户端指向 api.openai.com 且超时重试昂贵。
+情景记忆（近期事件）不受影响。恢复向量检索需配置本地/可用的 embedding 服务，
+属于后续独立特性。
 
 ## 目录结构
 

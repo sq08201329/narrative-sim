@@ -35,7 +35,7 @@ def run_simulation(
         personas.append((cid, dict(asset.get("persona_spec", {}), name=asset["name"])))
 
     events: list[dict] = []
-    seq_no = 0
+    seq_no = store.max_event_no()
     prev_event_by_char: dict[str, str] = {}
 
     def emit(tick: int, seq: int, etype: str, content: str,
@@ -66,7 +66,8 @@ def run_simulation(
 
     for tick in range(1, ticks + 1):
         for seq, (cid, spec) in enumerate(personas, start=1):
-            action = backend.act(spec, {"tick": tick, "location": location_id})
+            action = backend.act(spec, {"tick": tick, "location": location_id,
+                                        "character_id": cid})
             emitted = emit(
                 tick, seq, action["kind"], action["content"], [cid],
                 action.get("emotion", ""),

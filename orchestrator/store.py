@@ -99,6 +99,22 @@ class Store:
         )
         self._conn.commit()
 
+    def max_event_no(self) -> int:
+        """全库事件编号最大值（event_id 全局唯一，编号分配需跨运行连续）。"""
+        row = self._conn.execute(
+            "SELECT MAX(CAST(SUBSTR(event_id, 2) AS INTEGER)) AS m FROM events"
+        ).fetchone()
+        return row["m"] or 0
+
+    def update_run_cost(self, run_id: str, total_tokens: int) -> None:
+        """按 run_id 聚合写入 token 用量（宪章原则 VI）。"""
+        cur = self._conn.execute(
+            "UPDATE runs SET token_cost=? WHERE run_id=?", (total_tokens, run_id)
+        )
+        if cur.rowcount == 0:
+            raise KeyError(f"运行不存在: {run_id}")
+        self._conn.commit()
+
     # ---- 事件 ----
 
     def put_event(self, event: dict) -> None:
