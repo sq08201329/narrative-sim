@@ -35,7 +35,7 @@ def run_simulation(
         personas.append((cid, dict(asset.get("persona_spec", {}), name=asset["name"])))
 
     events: list[dict] = []
-    seq_no = 0
+    seq_no = store.max_event_no()
     prev_event_by_char: dict[str, str] = {}
 
     def emit(tick: int, seq: int, etype: str, content: str,

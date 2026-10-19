@@ -70,3 +70,14 @@ def test_minimal_chain_rerun_same_db(tmp_path):
     proc = _run_chain(db, out)
     assert proc.returncode == 0, proc.stderr
     assert "验收通过" in proc.stdout
+
+
+def test_two_runs_share_db_without_event_id_collision(tmp_path):
+    """同一数据库先后两个运行：event_id 全局编号不冲突（真实 bug 回归）。"""
+    db = tmp_path / "shared.db"
+    assert _run_chain(db, tmp_path / "r1.jsonl", "run_one").returncode == 0
+    proc = _run_chain(db, tmp_path / "r2.jsonl", "run_two")
+    assert proc.returncode == 0, proc.stderr
+    ids_1 = {e["event_id"] for e in _load_events(tmp_path / "r1.jsonl")}
+    ids_2 = {e["event_id"] for e in _load_events(tmp_path / "r2.jsonl")}
+    assert ids_1.isdisjoint(ids_2)

@@ -27,6 +27,9 @@ class FakeTinyPerson:
     def include_persona_definitions(self, definitions):
         self.persona = definitions
 
+    def define(self, key, value, **kwargs):
+        self.persona[key] = value
+
     def listen(self, text, **kwargs):
         self.last_heard = text
 
