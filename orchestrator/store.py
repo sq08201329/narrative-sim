@@ -99,6 +99,15 @@ class Store:
         )
         self._conn.commit()
 
+    def update_run_cost(self, run_id: str, total_tokens: int) -> None:
+        """按 run_id 聚合写入 token 用量（宪章原则 VI）。"""
+        cur = self._conn.execute(
+            "UPDATE runs SET token_cost=? WHERE run_id=?", (total_tokens, run_id)
+        )
+        if cur.rowcount == 0:
+            raise KeyError(f"运行不存在: {run_id}")
+        self._conn.commit()
+
     # ---- 事件 ----
 
     def put_event(self, event: dict) -> None:

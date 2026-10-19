@@ -6,9 +6,18 @@ dependencies = [
     "jsonschema>=4.26.0",
     "openai>=3.35.1",
     "python-dotenv>=1.2.4",
+    "tinytroupe",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "real: 需要真实 LLM 密钥的在线验收用例",
+]
+
+[tool.uv.sources]
+tinytroupe = { git = "https://github.com/microsoft/TinyTroupe.git", rev = "a6244b358a1fe1c71bf751f7ba0f8dfa368ec5a4" }
