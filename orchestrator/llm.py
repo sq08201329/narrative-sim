@@ -14,7 +14,7 @@ load_dotenv()
 
 
 class MissingApiKeyError(RuntimeError):
-    """缺少 LLM 密钥环境变量。"""
+    """缺少 LLM 密钥/服务地址环境变量。"""
 
 
 @lru_cache(maxsize=1)
@@ -24,10 +24,12 @@ def client() -> OpenAI:
         raise MissingApiKeyError(
             "缺少环境变量 DEEPSEEK_API_KEY：请复制 .env.example 为 .env 并填入 DeepSeek key"
         )
-    return OpenAI(
-        api_key=api_key,
-        base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-    )
+    base_url = os.environ.get("DEEPSEEK_BASE_URL")
+    if not base_url:
+        raise MissingApiKeyError(
+            "缺少环境变量 DEEPSEEK_BASE_URL：请在 .env 中配置服务地址"
+        )
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
 def _model(tier: str) -> str:

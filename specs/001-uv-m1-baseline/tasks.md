@@ -161,3 +161,9 @@ Task: "实现 orchestrator/llm.py"
 - 先写测试并确认 FAIL，再实现（US1 的 T011 → T012）
 - 每个 Checkpoint 停下来独立验收当前故事
 - 提交节奏：每个任务或逻辑组一次提交，信息单一意图
+
+---
+
+## Phase 7: Convergence
+
+- [x] T021 移除 `orchestrator/llm.py` 中 `DEEPSEEK_BASE_URL` 的硬编码默认值（`orchestrator/llm.py:29`），缺失环境变量时抛出与 `_model()` 一致的明确错误；若认为应保留默认值例外，则回写宪章技术栈约束说明理由 per Constitution 技术栈约束 (contradicts)
