@@ -32,6 +32,11 @@ uv run python scripts/run_real_chain.py
 末行输出「验收通过」，token 用量写入 `runs.token_cost` 可查。
 `config.ini` 控制着动作质量校验与并发，勿删。
 
+已知取舍：TinyTroupe 的语义记忆（向量检索）当前降级为本地列表 —— DeepSeek 无
+embeddings API，其默认 embedding 客户端指向 api.openai.com 且超时重试昂贵。
+情景记忆（近期事件）不受影响。恢复向量检索需配置本地/可用的 embedding 服务，
+属于后续独立特性。
+
 ## 目录结构
 
 ```text

@@ -147,3 +147,9 @@
 - 先写测试并确认 FAIL，再实现（T007 → T008/T009）
 - 每个 Checkpoint 停下来独立验收当前故事
 - 提交节奏：每个任务或逻辑组一次提交，信息单一意图
+
+---
+
+## Phase 7: Convergence
+
+- [x] T019 在 `specs/002-tinytroupe-backend/research.md` 的 D8 补记实测事实（语义记忆固化与召回同样走 embedding，不限于 grounding faculty），并在 `README.md` 注明语义检索当前降级为本地列表、恢复需配置 embedding 服务 per plan: research.md D8 (partial)

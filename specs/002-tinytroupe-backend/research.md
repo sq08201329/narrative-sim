@@ -89,6 +89,15 @@
   必 4xx。纯 TinyPerson 行动流不调 embedding，不碰即可。
 - **Alternatives**: 自配 embedding 模型 —— 超出 M2 范围，拒绝。
 
+> **实测补记（2026-10-19，实施期修正）**：D8 的"不接 grounding 就碰不到 embedding"
+> 被证伪 —— `SemanticMemory._store`（`agent/memory.py:609`）与
+> `retrieve_relevant_for_current_context`（`agent/tiny_person.py:1433`）在普通
+> `act()` 流程中同样调用 embedding，且 llama-index 默认打 api.openai.com、
+> 每次 10 轮超时重试。最终方案：`_LocalSemanticMemory` 降级为本地列表
+  （跳过向量连接器），episodic 记忆不受影响。恢复路径候选：本地嵌入模型
+  （如 sentence-transformers 格式的 EmbeddingGemma 2，替换 llama-index 的全局
+  `Settings.embed_model`），单独立项。
+
 ## D9: 测试策略 —— 离线单元测试 + 打标在线验收
 
 - **Decision**: `tests/contract/test_tinytroupe_backend.py` 用 monkeypatch 替换
