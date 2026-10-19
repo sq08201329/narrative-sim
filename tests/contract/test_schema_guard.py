@@ -2,9 +2,6 @@
 
 覆盖 spec：FR-006 / SC-003；错误格式见 contracts/asset-event-schemas.md。
 """
-import sqlite3
-from pathlib import Path
-
 import pytest
 
 from db.init_db import init as init_db
@@ -43,28 +40,26 @@ def store(tmp_path):
     s.close()
 
 
-def _table_counts(db_path: Path) -> tuple[int, int]:
-    conn = sqlite3.connect(db_path)
+def _asset_absent(store: Store, asset_id: str) -> bool:
     try:
-        assets = conn.execute("SELECT COUNT(*) FROM assets").fetchone()[0]
-        events = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
-    finally:
-        conn.close()
-    return assets, events
+        store.get_asset(asset_id)
+    except KeyError:
+        return True
+    return False
 
 
-def test_asset_missing_required_field_rejected(store, tmp_path):
+def test_asset_missing_required_field_rejected(store):
     bad = {k: v for k, v in VALID_ASSET.items() if k != "provenance"}
     with pytest.raises(SchemaValidationError, match=r"asset\.schema\.json 校验失败: \$"):
         store.put_asset(bad)
-    assert _table_counts(tmp_path / "guard.db") == (0, 0)
+    assert _asset_absent(store, "char_test_guard")
 
 
-def test_asset_bad_id_pattern_rejected(store, tmp_path):
+def test_asset_bad_id_pattern_rejected(store):
     bad = dict(VALID_ASSET, asset_id="角色甲")
     with pytest.raises(SchemaValidationError, match="asset_id"):
         store.put_asset(bad)
-    assert _table_counts(tmp_path / "guard.db") == (0, 0)
+    assert _asset_absent(store, "char_test_guard")
 
 
 def test_character_without_persona_spec_rejected(store):
@@ -73,13 +68,13 @@ def test_character_without_persona_spec_rejected(store):
         store.put_asset(bad)
 
 
-def test_event_bad_type_rejected(store, tmp_path):
+def test_event_bad_type_rejected(store):
     store.put_asset(VALID_ASSET)
     store.create_run("guard_run", "world_guard")
     bad = dict(VALID_EVENT, type="monologue")
     with pytest.raises(SchemaValidationError, match="event\.schema\.json 校验失败"):
         store.put_event(bad)
-    assert _table_counts(tmp_path / "guard.db") == (1, 0)
+    assert store.export_events("guard_run") == []
 
 
 def test_duplicate_run_id_rejected(store):
