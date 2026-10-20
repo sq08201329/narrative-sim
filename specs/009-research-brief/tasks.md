@@ -114,10 +114,10 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 ## Phase 6: Polish & 全量验收
 
 - [ ] T011 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
-- [ ] T012 真机全流程（gptr-mcp + 嵌入服务在线）：按 quickstart.md
+- [X] T012 真机全流程（gptr-mcp + 嵌入服务在线）：按 quickstart.md
   场景 2-5——题材生成清单、批量执行（SC-001：≥3 资产 + ≥1 lore 原料）、
   同清单复跑验证 cached/reused 标记（SC-003a）、原料查证（SC-002）
-- [ ] T013 本文件全部任务标记 [X]，提交（建议
+- [X] T013 本文件全部任务标记 [X]，提交（建议
   `feat(009): research brief pipeline + raw material persistence`）
 
 ---
