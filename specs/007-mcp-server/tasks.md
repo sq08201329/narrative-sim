@@ -123,3 +123,9 @@ T002 ∥ T003；mcp_server.py 上的 T004/T006/T007 严格串行。
 MVP = Phase 1-3（US1）：离线全链成立即交付核心价值；
 US2/US3 为同文件增量，一并收口；真机冒烟（T009）只验证传输层与
 错误语义，不重复真后端仿真（006 已验收）。
+
+---
+
+## Phase 7: Convergence
+
+- [ ] T011 复核 `scripts/run_mcp_server.py` 的 stdio 分支（spec Assumptions 列为不做项）：删除，或在 spec 中追认为可用传输并同步 data-model/quickstart per spec: Assumptions (unrequested)
