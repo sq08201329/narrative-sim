@@ -130,10 +130,12 @@ LLM 客户端连接 MCP server 后，能依次调用工具完成：
 
 ## Assumptions
 
-- MCP 客户端为支持 streamable-http 的 LLM 客户端；stdio 形态留作后续
+- MCP 客户端为支持 streamable-http 的 LLM 客户端；stdio 传输经
+  `MCP_TRANSPORT=stdio` 可用（converge T011 追认：fastmcp 原生支持、零额外成本，
+  适配桌面类 MCP 客户端），其客户端配置由用户自理
 - 真后端 run_simulation 为同步长调用，超时口径在 plan 阶段定
   （候选：按 ticks 线性计算 + 客户端可覆盖）
 - FastMCP 版本与 005 gptr-mcp 服务端验证过的兼容（fastmcp-slim[server] 教训
   已记录，主项目装哪个形态 plan 阶段定）
-- 本特性不做：MCP 鉴权/多用户、stdio transport、工具调用的进度推送
+- 本特性不做：MCP 鉴权/多用户、工具调用的进度推送
   （长轮询/SSE 进度）、DM 裁判工具的暴露

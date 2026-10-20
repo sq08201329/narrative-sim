@@ -18,6 +18,7 @@ uv run pytest -m "not real"
 uv run python scripts/run_mcp_server.py
 # 默认 streamable-http，127.0.0.1:8300；环境变量可改：
 #   MCP_TRANSPORT / MCP_HOST / MCP_PORT
+# 桌面类客户端（stdio 形态）：MCP_TRANSPORT=stdio uv run python scripts/run_mcp_server.py
 ```
 
 健康检查：客户端 `list_tools` 可见六个工具。

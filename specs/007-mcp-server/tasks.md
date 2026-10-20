@@ -128,4 +128,4 @@ US2/US3 为同文件增量，一并收口；真机冒烟（T009）只验证传�
 
 ## Phase 7: Convergence
 
-- [ ] T011 复核 `scripts/run_mcp_server.py` 的 stdio 分支（spec Assumptions 列为不做项）：删除，或在 spec 中追认为可用传输并同步 data-model/quickstart per spec: Assumptions (unrequested)
+- [X] T011 复核 `scripts/run_mcp_server.py` 的 stdio 分支（spec Assumptions 列为不做项）：删除，或在 spec 中追认为可用传输并同步 data-model/quickstart per spec: Assumptions (unrequested)
