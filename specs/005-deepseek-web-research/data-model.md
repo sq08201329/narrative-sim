@@ -1,48 +1,48 @@
-# Data Model: DeepSeek Web 调研后端
+# Data Model: GPT-Researcher 接入 DeepSeek 检索腿
 
 本特性不改资产/事件契约（FR-008），不引入持久化实体。
-以下为运行时概念模型（字段对齐官方 API 文档）。
+以下为运行时概念模型与跨层映射口径。
 
-## 检索结果条目（SearchResult，运行时）
+## DeepSeek 检索结果条目（SearchResult，插件输入）
 
-| 字段 | 类型 | 用途 |
+| 字段 | 类型 | 插件消费方式 |
 |---|---|---|
-| title | str | context 拼接、sources 记录 |
-| url | str | source_urls、Fetch 目标、溯源持久化 |
-| content | str | 正文（`need_content=true` 时可能有，空串表示缺失） |
-| summary | str | 长摘要（600-800 字符），content 缺失时垫底 |
-| snippet | str | 短摘要，不用于抽取（展示级） |
-| rerank_score | number | 排序分（≥1.5 优质），Fetch 补抓优先级依据 |
-| authority | int | 权威性 0-4，记录不用 |
-| date / site_name | str\|null | 记录不用 |
+| url | str | → `href`；Fetch 目标；溯源 URL |
+| title | str | → `title`（记录用） |
+| content | str | 正文（`need_content=true` 时可空）→ 优先 `raw_content` |
+| summary | str | 长摘要 → content 缺失时 `raw_content` 垫底；→ `body`（规划用）首选 |
+| snippet | str | 短摘要 → `body` 次选 |
+| rerank_score | number | ≥1.5 且正文摘要皆缺 → Fetch 补抓候选（按分数降序） |
+| date / authority / site_* | - | 丢弃（下游不读） |
 
-## 抓取页面（FetchedPage，运行时）
+## GPT-R retriever 条目（插件输出，鸭子类型契约）
 
-| 字段 | 类型 | 用途 |
+| 键 | 内容 | 规则 |
 |---|---|---|
-| title | str | context 拼接 |
-| content | str | Markdown 正文，补抓材料 |
+| href | 条目 URL | 必有，否则该条丢弃 |
+| raw_content | content 或 summary 或 Fetch 正文 | requires_scraping=False 的全文位 |
+| body | summary 或 snippet | 规划阶段阅读位 |
+| title | 标题 | 记录用 |
 
-## 组装后的检索层产出（DeepResearchShape，跨后端统一）
+类级声明 `requires_scraping = False`（显式，防遗留启发式误判）。
 
-| 字段 | 来源 | 说明 |
-|---|---|---|
-| status | 固定 `"success"` | 失败走 ResearchError 异常，不进 dict |
-| context | 条目「标题+URL+正文/摘要」拼接 | 抽取材料 |
-| sources | `[{url, title}]` | 溯源明细 |
-| source_urls | 全部条目 URL | 契约 sources 填充；空 → 无来源拒绝 |
-| retriever | 固定 `"deepseek(search+fetch)"` | _compose_asset 读取；缺省回落 `"gptr-mcp(searxng)"` 保 004 兼容 |
+## Fetch 补抓（成本闸门内）
 
-## 成本与重试参数（环境变量，无持久化）
+- 触发：content 与 summary 皆空 且 rerank_score ≥ 1.5
+- 上限：`DEEPSEEK_FETCH_MAX`（默认 2）/次 search() 调用
+- 失败（403/404/超时）：回退摘要；摘要也无 → 丢弃该条
 
-| 变量 | 默认 | 约束 |
-|---|---|---|
-| `RESEARCH_BACKEND` | `deepseek` | `deepseek`/`gptr-mcp`，非法值报错 |
-| `RESEARCH_DS_COUNT` | `8` | 1-50（官方上限） |
-| `RESEARCH_DS_FETCH_MAX` | `3` | ≥0，0 = 不补抓 |
-| `RESEARCH_DS_RETRIES` | `3` | ≥0，退避 2s/4s/8s |
+## 环境变量（无持久化）
+
+插件侧（gptr-mcp venv 进程）：`DEEPSEEK_API_KEY`（复用）、
+`DEEPSEEK_SEARCH_BASE_URL`（默认官方地址）、`DEEPSEEK_FETCH_MAX`（2）、
+`DEEPSEEK_SEARCH_RETRIES`（2）。
+
+客户端侧（本项目）：`GPTR_MCP_RETRIEVER_LABEL`
+（默认 `gptr-mcp(deepseek-search)`，填 `provenance.retriever`）。
 
 ## 查询词约束
 
-- 长度 > 128 Unicode 字符 → 截断到 128 并记日志（官方 query 上限）
-- 空/纯空白 → 管线既有拒绝，先于任何计费调用
+- search() 入口截断到 128 Unicode 字符（官方上限），GPT-R 子查询
+  可能含操作符，原样透传不清洗（官方支持搜索语法）
+- 空查询：GPT-R 不产生空调用；若发生，插件直接返回 []

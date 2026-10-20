@@ -1,4 +1,4 @@
-# Specification Quality Checklist: DeepSeek Web 调研后端（与 gptr-mcp 并存）
+# Specification Quality Checklist: GPT-Researcher 接入 DeepSeek 检索腿
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-10-20
@@ -31,7 +31,8 @@
 
 ## Notes
 
-- DeepSeek Search/Fetch 端点形态出现在 Assumptions，作为既有外部能力的
-  事实引用（与 002/003 引用 DeepSeek chat 端点同口径），不构成实现锁定
-- "子查询是否规划"与"默认后端"两点显式留给 plan 阶段，在 Assumptions 声明
+- 本版为 B 方案修订版（用户拍板）：A 方案初稿（仓库内直连 DeepSeek 后端、
+  双后端切换）作废，检索接入点改到 GPT-Researcher retriever 插件层
+- entry-point 插件机制、DeepSeek API 字段出现在 FR/Assumptions，
+  为已核实的外部契约事实引用（子代理源码调查 + 官方文档），不构成实现锁定
 - 一轮验证通过，无需迭代

@@ -1,87 +1,109 @@
-# Phase 0 Research: DeepSeek Web 调研后端
+# Phase 0 Research: GPT-Researcher 接入 DeepSeek 检索腿（B 方案）
 
-日期：2026-10-20。API 事实来自官方文档
-（api-docs.deepseek.com/zh-cn/guides/search/，上一轮已逐字取得）。
+日期：2026-10-20。retriever 扩展点事实来自 fork 源码调查（子代理），
+DeepSeek API 事实来自官方文档（api-docs.deepseek.com/zh-cn/guides/search/）。
 
-## R1: 检索层实现 — Search 一次 + Fetch 按缺口补抓
+## R1: 接入形态 — entry-point 插件包（fork 零改动）
 
-**Decision**: `POST {DEEPSEEK_BASE_URL}/v1/tools/search`，
-`{"query", "count": RESEARCH_DS_COUNT(默认8), "need_content": true}`。
-材料组装：
-- `content` 非空的条目：正文直接用
-- `content` 为空的条目：`summary`（600-800 字符，官方定位即"给模型阅读"）垫底
-- 正文缺失且排序靠前（rerank_score 高）的条目：Fetch 补抓，
-  上限 `RESEARCH_DS_FETCH_MAX`（默认 3，成本闸门 FR-005）
-- 全部条目既无正文又无摘要、且 Fetch 全失败 → 材料不足，明确失败（FR-006）
-- context = 各条目「标题 + URL + 正文/摘要」拼接；source_urls = 全部条目 URL
+**Decision**: 在本仓库新建插件包 `plugins/gptr-deepseek-retriever/`，
+经 entry-point 组 `gpt_researcher.retrievers` 注册名为 `deepseek` 的 retriever，
+安装进 gptr-mcp venv 后 `RETRIEVER=deepseek` 生效。
 
-**Alternatives considered**: 每个条目都 Fetch 全文——Fetch 另计次费且有域名级
-限速，summary 已够抽取，只在缺口补抓。
+**机制证据**（fork 源码）:
+- `retrievers/utils.py:86-120`：retriever 白名单 = retrievers/ 子目录扫描
+  + entry-point 插件名，`RETRIEVER` 校验自动通过
+- `actions/retriever.py:135-147`：`get_retriever` 的 match/case 未命中时落到
+  `_load_plugin_retriever`，查 entry-point 组并 load
+- 鸭子类型契约（无强制基类）：构造 `(query, headers=None, query_domains=None)`，
+  `search(max_results=...)` **必须同步**（调用方 asyncio.to_thread 包装），
+  返回 `list[dict]` 至少含 `href` 或 `url`
+- 配置惯例：`__init__` 直接读环境变量（tavily/searx 同款）
 
-## R2: 子查询规划 — 不做（单查询基线）
+**Alternatives considered**: 直接改 fork（~70 行、2 个文件 + 新目录）——
+代码落到仓库外、不可测试不可版本化，否决；`RETRIEVER=custom` + 转换代理——
+多一层常驻进程，否决。
 
-**Decision**: 直接用用户查询词做 1 次 Search，不增加"LLM 规划子查询"环节。
+## R2: 字段映射 — content 全文直通（省掉抓取轮）
 
-**Rationale**: spec Assumptions 已定单查询为基线；DeepSeek Search 的
-summary/snippet 已按 query 意图压缩；子查询规划是 GPT-R 为扩召回广度的设计，
-会让 Search 计费次数与 LLM 调用翻倍。未来召回质量不足时再单独特性评估。
+**Decision**: 类级声明 `requires_scraping = False`，逐条映射：
+`url → href`，`content or summary → raw_content`（content 为空用 summary 垫底，
+两者皆空丢弃该条）。Search 请求恒带 `need_content=true`。
 
-## R3: 后端选择与默认 — RESEARCH_BACKEND，默认 deepseek
+**机制证据**:
+- `skills/researcher.py:903-915`：`requires_scraping=False` 时 raw_content
+  直接计入 research_sources 与 visited_urls，**不再发起网页抓取**
+- 必须显式声明：不声明会落入遗留启发式（`len(raw_content)>100` 才算全文，
+  researcher.py:916-924）——fork 给 searx snippet 截断躲的就是这个坑
+- 规划阶段读 `body`（deep_research.py:300-333）：同时映射 `summary or snippet
+  → body`，保证子查询规划质量
+- `rerank_score`/`date`/`authority` 下游不读，丢弃
 
-**Decision**: `RESEARCH_BACKEND=deepseek|gptr-mcp`，未设默认 `deepseek`
-（零常驻服务、无限流痛点的那条腿优先）；非法值明确报错。
-`research.py` 的 `_default_call_tool()` 改为按后端分发：
-- `gptr-mcp`：现有 MCP 路径不变（FR-008）
-- `deepseek`：新工厂返回同签名 `call_tool(name, arguments)`，忽略 name，
-  用 `arguments["query"]` 执行 R1 流程，返回 deep_research 同形态 dict
-  （`status/context/sources/source_urls`）+ `retriever` 键
+**Fetch 补抓**：正文与摘要皆缺的条目若排序靠前（rerank_score ≥ 1.5），
+插件自行调 Fetch 补抓，上限 `DEEPSEEK_FETCH_MAX`（默认 2，成本闸门）；
+补抓失败回退摘要/丢弃。
 
-**溯源标识**：`call_tool` 返回 dict 可带 `retriever` 键；`_compose_asset`
-改为 `resp.get("retriever", "gptr-mcp(searxng)")`——gptr-mcp 路径行为
-逐字节不变（FR-008 兼容），DeepSeek 后端标识为 `deepseek(search+fetch)`。
+## R3: 容错语义（FR-004，GPT-R 无兜底路径的约束）
 
-## R4: 错误语义（FR-004，对齐官方错误表）
+**Decision**: 插件任何路径不抛异常：
+- `__init__` 缺 `DEEPSEEK_API_KEY`：print 警告，`search()` 返回 `[]`
+- `search()` 内：429/5xx 短退避重试 ≤ `DEEPSEEK_SEARCH_RETRIES`（默认 2 次，
+  退避 2s/4s）；401/402 打印原因；其它异常一并捕获 → 返回 `[]`
+- 响应做 dict/逐条校验（tavily 模板 137-147 行同款），API 返回异常类型不炸
+- requests/httpx 调用必须带 timeout（30s），否则线程池挂死
 
-| 情形 | 行为 |
-|---|---|
-| 429 / 408 / 5xx | 指数退避重试（2s/4s/8s），上限 `RESEARCH_DS_RETRIES`（默认 3） |
-| 402 | `ResearchError("DeepSeek 余额不足")`，不重试 |
-| 其它 4xx（400/401/403/404/413） | 不重试，明确报错（403/404 仅 Fetch：跳过该源） |
-| Search results 空 | 返回 success + 空 source_urls → 管线既有「无来源拒绝」路径（FR-006） |
-| Fetch 403/404 | 跳过该 URL 继续下一个；全部失败才按材料不足报错 |
+**机制证据**: `get_search_results`（actions/query_processing.py:73-81，
+初始搜索与规划都走）**没有 try**，插件抛出会炸掉整个调研；
+单 retriever 全空时 writer 有"无法生成报告"防护（skills/writer.py:79-88），
+004 管线另有"无来源拒绝"口径，空结果语义闭环。
 
-## R5: 成本闸门（FR-005）
+## R4: 服务端配置切换（FR-007）
+
+gptr-mcp 启动环境变化（仓库外，quickstart 文档化）：
+- 新增：`RETRIEVER=deepseek`；venv 内 `pip install <本仓库插件包路径>`
+- 保留：`SEARX_URL`（searx 腿切回即用）；`RETRIEVER` 支持逗号分隔多腿
+  （config.py:79,189-202），本特性只用单腿
+- 插件未安装却设 `RETRIEVER=deepseek`：校验阶段即报 unknown retriever
+  （US2-AC2 的可诊断失败信号）
+
+**溯源标识**：004 管线的 `provenance.retriever` 对 gptr-mcp 路径由
+`GPTR_MCP_RETRIEVER_LABEL` 环境变量给出，默认改为 `gptr-mcp(deepseek-search)`
+（客户端无法从响应反推服务端检索腿，故显式配置；004 的 searx 默认值随之过时，
+research.py 仅改默认值与读取逻辑，行为兼容）。
+
+## R5: 成本口径
+
+- GPT-R 标准调研（research_report）≈ 5 次 Search/调研（1 初始 + ~4 子查询，
+  MAX_ITERATIONS=3 + 原查询），+ ≤2 次 Fetch 补抓
+- 按 5 元/千次计，单次调研检索成本 ≈ 0.025-0.035 元，可忽略但记账可知
+- deep_research 递归模式量级高一个数量级，本特性不启用
+
+## R6: 环境变量清单
+
+**插件（gptr-mcp 服务端 venv 进程读取）**:
 
 | 变量 | 含义 | 默认 |
 |---|---|---|
-| `RESEARCH_BACKEND` | 后端选择 | `deepseek` |
-| `RESEARCH_DS_COUNT` | Search 返回条数（≤50） | `8` |
-| `RESEARCH_DS_FETCH_MAX` | Fetch 补抓次数上限 | `3` |
-| `RESEARCH_DS_RETRIES` | 退避重试上限 | `3` |
+| `DEEPSEEK_API_KEY` | 密钥（复用） | 无（缺失=警告+空结果） |
+| `DEEPSEEK_SEARCH_BASE_URL` | 端点 base | `https://api.deepseek.com` |
+| `DEEPSEEK_FETCH_MAX` | Fetch 补抓上限/次检索 | `2` |
+| `DEEPSEEK_SEARCH_RETRIES` | 429/5xx 重试上限 | `2` |
 
-单次调研成本上限 = 1 次 Search + 3 次 Fetch，可预期。
-复用：`DEEPSEEK_BASE_URL`/`DEEPSEEK_API_KEY`（端点与密钥零新增，FR-003）。
+**本项目（客户端）**: `GPTR_MCP_RETRIEVER_LABEL`（溯源标识，
+默认 `gptr-mcp(deepseek-search)`）。
 
-## R6: 边界口径
+## R7: 测试策略（FR-008，离线 Mock 基线）
 
-- query > 128 字符：截断到 128（官方上限），截断行为记日志（spec Edge Case
-  选定口径：截断而非拒绝——查询词通常是自然语言，截断损失可接受）
-- 空/纯空白查询：管线既有拒绝逻辑在 Search 之前生效，不产生计费调用
-- Fetch URL 校验（必须 http/https 含 host）：Search 返回的 URL 天然合法，不另校验
-
-## R7: 测试策略（FR-007，离线 Mock 基线）
-
-- mock httpx 层：Search/Fetch 响应体、状态码序列（429→200、402、5xx×N）
-- 后端选择器：env 各值 → 正确工厂；非法值报错；未设默认 deepseek
-- 材料组装：content 缺失 → summary 垫底 → Fetch 补抓次序与上限；
-  全缺 → 材料不足报错
-- retriever 标识：deepseek 路径 `deepseek(search+fetch)`，
-  gptr-mcp 路径保持 `gptr-mcp(searxng)`（兼容断言）
+插件包在本仓库，测试直接 import 插件类、mock HTTP 层：
+- 字段映射：content→raw_content、summary 垫底、皆空丢弃、body 映射
+- `requires_scraping is False` 显式声明
+- 429→重试→成功；429 持续→返回 []；401/402→[]+警告；响应非 dict→[]
+- 补抓：皆空条目触发 Fetch（按 rerank_score 优先级、上限约束）、失败回退
+- query 截断 128；缺 key → [] 不抛
 - 004 既有 17 项测试保持绿（FR-008）
 
 ## R8: 依赖与回归面
 
-- 零新增依赖（httpx 已在 lock，原则 V）
-- 改动面：`orchestrator/research.py`（DeepSeek 后端 + 选择器 + retriever 键）、
-  `tests/contract/test_research_pipeline.py`（新用例）、`.env.example`
-- gptr-mcp 代码路径行为不变（R3 兼容设计），M1/M2/003/004 回归兜底
+- 插件包依赖仅 httpx（随主项目 lock；gptr-mcp venv 装插件时一并解析）
+- fork 零改动；gptr-mcp server.py 零改动；004 管线仅 retriever 标签默认值
+  与 env 读取一处小改
+- M1/M2/003/004 回归兜底；T017（全链路同义去重复验）随 SC-002 一并关闭
