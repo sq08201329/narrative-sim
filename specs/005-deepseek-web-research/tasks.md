@@ -13,11 +13,11 @@ research.py 改动）与仓库外的 gptr-mcp 服务端（装插件 + RETRIEVER 
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] 创建插件包骨架 `plugins/gptr-deepseek-retriever/`：
+- [X] T001 [P] 创建插件包骨架 `plugins/gptr-deepseek-retriever/`：
   `pyproject.toml`（name `gptr-deepseek-retriever`，依赖仅 httpx，
   entry-point 组 `gpt_researcher.retrievers` 注册 `deepseek`）、
   `gptr_deepseek_retriever/__init__.py`（导出占位）
-- [ ] T002 [P] 主项目引入插件 path 依赖：`uv add --editable
+- [X] T002 [P] 主项目引入插件 path 依赖：`uv add --editable
   ./plugins/gptr-deepseek-retriever`（pyproject `[tool.uv.sources]` 记录）；
   `.env.example` 加 `GPTR_MCP_RETRIEVER_LABEL`（默认 `gptr-mcp(deepseek-search)`）
 
@@ -25,7 +25,7 @@ research.py 改动）与仓库外的 gptr-mcp 服务端（装插件 + RETRIEVER 
 
 ## Phase 2: Foundational（工具函数，阻塞所有故事）
 
-- [ ] T003 实现 `plugins/gptr-deepseek-retriever/gptr_deepseek_retriever/client.py`
+- [X] T003 实现 `plugins/gptr-deepseek-retriever/gptr_deepseek_retriever/client.py`
   （FR-009）：`web_search(query, count=8, need_content=True) -> list[dict]`
   与 `web_fetch(url) -> dict | None`——httpx + Bearer（`DEEPSEEK_API_KEY`，
   缺失打印警告返回空）、端点由 `DEEPSEEK_SEARCH_BASE_URL` 派生（默认官方地址）；
@@ -46,7 +46,7 @@ sources 非空、retriever 为 `gptr-mcp(deepseek-search)`
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T004 [US1] 新建 `tests/contract/test_gptr_deepseek_retriever.py`，
+- [X] T004 [US1] 新建 `tests/contract/test_gptr_deepseek_retriever.py`，
   mock HTTP 层：
   工具函数——search 成功映射/无结果 []/429→重试→成功/429 持续→[]/
   401、402→[]+警告/响应非 dict→[]/query 截断/fetch 成功与 404→None；
@@ -56,18 +56,18 @@ sources 非空、retriever 为 `gptr-mcp(deepseek-search)`
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] 实现 `plugins/gptr-deepseek-retriever/gptr_deepseek_retriever/deepseek.py`
+- [X] T005 [US1] 实现 `plugins/gptr-deepseek-retriever/gptr_deepseek_retriever/deepseek.py`
   （依赖 T003）：`DeepSeekSearchRetriever` 鸭子类型契约
   （`__init__(query, headers=None, query_domains=None)` + 同步
   `search(max_results=10)`），复用 client.py 两个工具函数；
   补抓逻辑：content 与 summary 皆空且 rerank_score ≥1.5 的条目按分数降序
   Fetch ≤`DEEPSEEK_FETCH_MAX`（默认 2），失败回退/丢弃；
   `__init__.py` 导出类与两个工具函数
-- [ ] T006 [US1] Spike（仓库外）：gptr-mcp venv 安装插件
+- [X] T006 [US1] Spike（仓库外）：gptr-mcp venv 安装插件
   `pip install D:\...\narrative-sim\plugins\gptr-deepseek-retriever`，
   以 `RETRIEVER=deepseek` 启动服务，确认不报 unknown retriever + /health 200；
   `RETRIEVER=deepseek` 未装插件时的报错形态记录到 quickstart（US2-AC2）
-- [ ] T007 [US1] 真机验收（SearXNG 停开）：按 quickstart.md 场景 4 跑
+- [X] T007 [US1] 真机验收（SearXNG 停开）：按 quickstart.md 场景 4 跑
   人物 + 场景查询词，确认契约资产入库、sources 非空、
   `provenance.retriever="gptr-mcp(deepseek-search)"`（SC-001）
 
@@ -84,18 +84,18 @@ sources 非空、retriever 为 `gptr-mcp(deepseek-search)`
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T008 [US2] 在 `tests/contract/test_research_pipeline.py` 增加用例：
+- [X] T008 [US2] 在 `tests/contract/test_research_pipeline.py` 增加用例：
   `GPTR_MCP_RETRIEVER_LABEL` 未设 → retriever 默认
   `gptr-mcp(deepseek-search)`；显式设为 `gptr-mcp(searxng)` → 入库资产
   retriever 随之变化（mock call_tool 路径）
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] `orchestrator/research.py`：`_compose_asset` 的
+- [X] T009 [US2] `orchestrator/research.py`：`_compose_asset` 的
   `provenance.retriever` 改为读 `GPTR_MCP_RETRIEVER_LABEL`
   （默认 `gptr-mcp(deepseek-search)`）；gptr-mcp call_tool 路径其余行为不变；
   确认 004 既有测试按新默认值更新后全绿
-- [ ] T010 [US2] searx 腿回归（可选真机，视 360search 限流状态）：
+- [X] T010 [US2] searx 腿回归（可选真机，视 360search 限流状态）：
   `RETRIEVER=searx` + SearXNG 在线时确认服务正常；记录结果到 quickstart
 
 **Checkpoint**: US1、US2 均独立成立
@@ -110,7 +110,7 @@ sources 非空、retriever 为 `gptr-mcp(deepseek-search)`
 
 ### Tests for User Story 3（大部分随 T004 落地）
 
-- [ ] T011 [US3] 补全 `tests/contract/test_gptr_deepseek_retriever.py`：
+- [X] T011 [US3] 补全 `tests/contract/test_gptr_deepseek_retriever.py`：
   补抓触发条件（皆空+高分才抓、上限约束、失败回退摘要、摘要也无丢弃）；
   插件缺 key → `search()` 返回 [] 不抛；并发安全（无实例可变状态断言）
 
@@ -120,11 +120,11 @@ sources 非空、retriever 为 `gptr-mcp(deepseek-search)`
 
 ## Phase 6: Polish & 全量验收
 
-- [ ] T012 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
-- [ ] T013 全链路同义去重（SC-002，关闭 004 T017）：嵌入服务在线 +
+- [X] T012 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
+- [X] T013 全链路同义去重（SC-002，关闭 004 T017）：嵌入服务在线 +
   DeepSeek 腿，同义查询重复调研命中已有资产、库中数量为 1
-- [ ] T014 按 quickstart.md 场景 1-6 逐一验证
-- [ ] T015 本文件全部任务标记 [X]，提交（建议
+- [X] T014 按 quickstart.md 场景 1-6 逐一验证
+- [X] T015 本文件全部任务标记 [X]，提交（建议
   `feat(005): gptr deepseek retriever plugin + web_search/web_fetch tools`）
 
 ---

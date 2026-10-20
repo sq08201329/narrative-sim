@@ -22,6 +22,11 @@ cd D:\kimicode_repos\projects\my-gpt-research\gptr-mcp
 
 验证加载：启动服务时 `RETRIEVER=deepseek` 不再报 unknown retriever。
 
+注意（实测行为）：若插件未安装却设 `RETRIEVER=deepseek`，GPT-R 会在 Config
+创建时打印醒目警告 `Invalid retriever(s) found: deepseek... Defaulting to
+'tavily'` 并退回 tavily——警告即 US2-AC2 的可诊断信号；退回的 tavily 因无
+TAVILY_API_KEY 会返回空结果，最终按"无来源拒绝"失败，不会静默产出错误资产。
+
 ## 3. 启动 gptr-mcp（DeepSeek 检索腿，不启动 SearXNG）
 
 环境变量同 004 quickstart 0b，两处变化：
@@ -69,3 +74,6 @@ print(web_fetch('https://example.com') )
 
 `RETRIEVER=searx` + `SEARX_URL=<地址>` 重启服务（SearXNG 需在线），
 `GPTR_MCP_RETRIEVER_LABEL=gptr-mcp(searxng)`，004 路径行为不变。
+
+注：005 验收时 360search 仍处限流状态（004 验收实测），searx 腿回归未执行；
+其代码路径自 004 验收以来未改动，DeepSeek 腿现为默认主力。
