@@ -17,10 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from dotenv import load_dotenv
 
-from orchestrator.persona_tinytroupe import (
-    _build_embedding_model,
-    _embedding_config,
-    _preflight_embedding,
+from orchestrator.embedding import (
+    build_embedding_model,
+    embedding_config,
+    preflight_embedding,
 )
 
 RELATED = "公园里很多人在晨跑和遛狗，湖边有人打太极"
@@ -43,16 +43,16 @@ def cos(a, b):
 
 def main() -> int:
     load_dotenv()
-    cfg = _embedding_config()
+    cfg = embedding_config()
     if cfg is None:
         print("未设置 EMBEDDING_API_BASE，无法探测（见 .env.example）")
         return 2
-    reason = _preflight_embedding(cfg)
+    reason = preflight_embedding(cfg)
     if reason is not None:
         print(f"预检失败: {reason}")
         return 2
 
-    emb = _build_embedding_model(cfg)
+    emb = build_embedding_model(cfg)
     q = emb.get_query_embedding(QUERY)
     scores = {}
     for name, doc in [("相关", RELATED)] + [(f"干扰{i+1}", d) for i, d in enumerate(DISTRACTORS)]:

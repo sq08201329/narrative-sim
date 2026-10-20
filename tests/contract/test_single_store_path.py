@@ -33,3 +33,38 @@ def test_no_direct_sqlite_outside_store():
         "发现 store.py 之外的 sqlite3 直连（违反宪章原则 III）：\n"
         + "\n".join(offenders)
     )
+
+
+# ---- 004 T005：list_assets 读方法 ----
+
+def _scene_asset(asset_id: str, name: str) -> dict:
+    return {
+        "asset_id": asset_id,
+        "type": "scene",
+        "name": name,
+        "provenance": {
+            "researched_at": "2026-10-20T00:00:00",
+            "retriever": "test",
+            "model": "test",
+            "confidence": 0.5,
+        },
+    }
+
+
+def test_list_assets_filters_by_type(tmp_path):
+    from db.init_db import init as init_db
+    from orchestrator.store import Store
+
+    db = tmp_path / "t.db"
+    init_db(db)
+    store = Store(db)
+    try:
+        store.put_asset(_scene_asset("scene_a", "甲"))
+        store.put_asset(_scene_asset("scene_b", "乙"))
+        store.put_asset({**_scene_asset("prop_c", "丙"), "asset_id": "prop_c",
+                        "type": "prop"})
+        assert [a["name"] for a in store.list_assets("scene")] == ["甲", "乙"]
+        assert len(store.list_assets()) == 3
+        assert store.list_assets("epoch") == []
+    finally:
+        store.close()

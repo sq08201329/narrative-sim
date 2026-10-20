@@ -10,15 +10,15 @@ from types import SimpleNamespace
 import llama_index.embeddings.openai.base as openai_emb_base
 from llama_index.core import Settings
 
-from orchestrator.persona_tinytroupe import (
+from orchestrator.embedding import (
     DEFAULT_EMBEDDING_MODEL,
     DOC_PREFIX,
     EMBEDDING_DIM,
     QUERY_PREFIX,
-    TinyTroupeBackend,
-    _build_embedding_model,
-    _embedding_config,
+    build_embedding_model,
+    embedding_config,
 )
+from orchestrator.persona_tinytroupe import TinyTroupeBackend
 
 CFG = {
     "api_base": "http://embedding.invalid/v1",
@@ -30,7 +30,7 @@ CFG = {
 
 @pytest.fixture()
 def emb():
-    return _build_embedding_model(CFG)
+    return build_embedding_model(CFG)
 
 
 @pytest.fixture()
@@ -102,14 +102,14 @@ def test_batch_embeddings_prefix_and_zero_fill(emb, captured):
 
 def test_config_none_without_env(monkeypatch):
     monkeypatch.delenv("EMBEDDING_API_BASE", raising=False)
-    assert _embedding_config() is None
+    assert embedding_config() is None
 
 
 def test_config_reads_env_with_defaults(monkeypatch):
     monkeypatch.setenv("EMBEDDING_API_BASE", "http://x.invalid/v1/")
     for var in ("EMBEDDING_MODEL", "EMBEDDING_TIMEOUT_S", "EMBEDDING_MAX_CHARS"):
         monkeypatch.delenv(var, raising=False)
-    cfg = _embedding_config()
+    cfg = embedding_config()
     assert cfg["api_base"] == "http://x.invalid/v1"
     assert cfg["model"] == DEFAULT_EMBEDDING_MODEL
     assert cfg["timeout_s"] == 10.0
