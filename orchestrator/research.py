@@ -108,7 +108,8 @@ def _compose_asset(draft: dict, asset_type: str, source_urls: list[str], now) ->
         "name": name,
         "provenance": {
             "researched_at": ts,
-            "retriever": "gptr-mcp(searxng)",
+            "retriever": os.environ.get("GPTR_MCP_RETRIEVER_LABEL",
+                                        "gptr-mcp(deepseek-search)"),
             "model": model_name,
             "confidence": min(0.5 + 0.1 * len(source_urls), 0.9),
         },

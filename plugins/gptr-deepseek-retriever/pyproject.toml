@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gptr-deepseek-retriever"
+version = "0.1.0"
+description = "GPT-Researcher retriever plugin: DeepSeek Search/Fetch API leg"
+requires-python = ">=3.12"
+dependencies = ["httpx>=0.28"]
+
+[project.entry-points."gpt_researcher.retrievers"]
+deepseek = "gptr_deepseek_retriever:DeepSeekSearchRetriever"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gptr_deepseek_retriever"]
