@@ -14,7 +14,7 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 1: Setup
 
-- [ ] T001 `uv add --editable /d/kimicode_repos/projects/my_mas/WorldSeed`
+- [X] T001 `uv add --editable /d/kimicode_repos/projects/my_mas/WorldSeed`
   （本地副本路径安装，不装 dm extra）；验证 `from worldseed.world import
   WorldEngine` 可 import 且 `uv run pytest -m "not real" -q` 既有 86 项不回归
   （依赖解析冲突在此暴露）
@@ -23,11 +23,11 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 2: Foundational（阻塞所有故事）
 
-- [ ] T002 [P] `orchestrator/store.py` 增加 `put_world_state(world_id, tick,
+- [X] T002 [P] `orchestrator/store.py` 增加 `put_world_state(world_id, tick,
   state_json)` 与 `get_world_state(world_id) -> tuple[int, str] | None`
   （原则 III：仅多两个方法），附离线测试（写读往返 / 无记录返回 None /
   tick 更新覆盖）
-- [ ] T003 `orchestrator/world.py` 实现配置组装 `build_scene_config(store,
+- [X] T003 `orchestrator/world.py` 实现配置组装 `build_scene_config(store,
   character_ids, location_id)`：场景资产 → scene+entities；角色资产
   persona_spec → agents[].character（含 secret 字段）；perception 段
   （hidden_properties/visibility/event_scopes，照 teahouse.yaml 模板）；
@@ -46,7 +46,7 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T004 [US1] 新建 `tests/contract/test_world_engine.py`（真实引擎 +
+- [X] T004 [US1] 新建 `tests/contract/test_world_engine.py`（真实引擎 +
   001 的 MockBackend）：配置组装（资产→SceneConfig 各段正确、缺角色报错）；
   世界循环跑 3 tick：事件全部过契约校验、event_id 连续、开场 scene_change
   事件与 001 同形态；信息不对称：两角色 perceive 输出互不含对方 secret、
@@ -54,14 +54,14 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] 在 `orchestrator/world.py` 实现世界循环 `run_world(store,
+- [X] T005 [US1] 在 `orchestrator/world.py` 实现世界循环 `run_world(store,
   run_id, world_id, character_ids, location_id, ticks, backend)`：
   引擎生命周期（config→register→每 tick perceive→组装 visible_state→
   backend.act→动作映射 submit→step）→ 契约事件 emit（复用 001 的
   `_SHOT_BY_KIND` 与 emit 口径；visible_state 由 AgentPerception 组装为
   backend 既有 {tick, location, recent_events} 键，backend 接口零改动）；
   动作映射失败被翻译层拦截记录，不产生残缺事件
-- [ ] T006 [US1] 实现 `scripts/run_world_chain.py` CLI（--world-id --ticks
+- [X] T006 [US1] 实现 `scripts/run_world_chain.py` CLI（--world-id --ticks
   --db [--resume]），结构对照 run_real_chain.py（cwd 守卫/打印/验收口径）
 
 **Checkpoint**: US1 独立成立 —— 离线真实引擎全链路可证
@@ -77,14 +77,14 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T007 [US2] 在 `tests/contract/test_world_engine.py` 增加：
+- [X] T007 [US2] 在 `tests/contract/test_world_engine.py` 增加：
   每 tick 后 worlds.state 有快照且 tick 递增；save_state→新引擎
   load_state 后续跑，事件编号经 max_event_no 连续、无重复回合；
   损坏快照（非法 JSON）续跑明确报错
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] 在 `orchestrator/world.py` 实现快照读写：每 tick 结算后
+- [X] T008 [US2] 在 `orchestrator/world.py` 实现快照读写：每 tick 结算后
   `engine.save_state()` → `store.put_world_state()`；`run_world(resume=True)`
   时 `get_world_state` → 同配置重建引擎 → `load_state` → 从 tick+1 继续；
   快照反序列化失败明确报错（FR-005 / Edge Case）
@@ -101,7 +101,7 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 3
 
-- [ ] T009 [US3] 在 `tests/contract/test_world_engine.py` 增加：
+- [X] T009 [US3] 在 `tests/contract/test_world_engine.py` 增加：
   `_SHOT_BY_KIND` 映射与 001 逐键一致（dialogue/action/inner_voice/
   scene_change/narration）；grep 验证 WorldSeed import 只出现在
   `orchestrator/world.py` 与 `tests/contract/test_world_engine.py`
@@ -112,11 +112,11 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 6: Polish & 全量验收
 
-- [ ] T010 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
-- [ ] T011 真机验收（TinyTroupe 后端 + DeepSeek 密钥）：按 quickstart.md
+- [X] T010 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
+- [X] T011 真机验收（TinyTroupe 后端 + DeepSeek 密钥）：按 quickstart.md
   场景 2 跑 4 回合（SC-001：≥5 事件、契约全过），场景 3 断点续跑（SC-003），
   场景 5 旧链路对照（M1 真跑一致）
-- [ ] T012 本文件全部任务标记 [X]，提交（建议
+- [X] T012 本文件全部任务标记 [X]，提交（建议
   `feat(006): world engine integration via WorldSeed adapter`）
 
 ---
