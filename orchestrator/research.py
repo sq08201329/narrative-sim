@@ -39,15 +39,19 @@ def _mcp_url() -> str:
 
 
 async def _mcp_call_tool(url: str, name: str, arguments: dict, timeout: float) -> dict:
+    import httpx2
     from mcp import ClientSession
     from mcp.client.streamable_http import streamable_http_client
 
-    async with streamable_http_client(url, timeout=timeout) as (read, write):
+    http_client = httpx2.AsyncClient(timeout=httpx2.Timeout(timeout))
+    async with streamable_http_client(url, http_client=http_client) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             result = await session.call_tool(name, arguments)
-    if result.structuredContent is not None:
-        return result.structuredContent
+    structured = getattr(result, "structuredContent", None) or getattr(
+        result, "structured_content", None)
+    if structured is not None:
+        return structured
     return json.loads(result.content[0].text)
 
 

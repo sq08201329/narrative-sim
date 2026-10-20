@@ -13,10 +13,10 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] `.env.example` 增加客户端键位（含注释，不出现具体地址字面量）：
+- [X] T001 [P] `.env.example` 增加客户端键位（含注释，不出现具体地址字面量）：
   `GPTR_MCP_URL`（未设=明确报错）、`RESEARCH_TIMEOUT_S`（默认 180）、
   `RESEARCH_DEDUP_THRESHOLD`（默认 0.85）
-- [ ] T002 Spike：搭建 gptr-mcp 服务端（仓库外，不产生本仓库代码改动）——
+- [X] T002 Spike：搭建 gptr-mcp 服务端（仓库外，不产生本仓库代码改动）——
   在 `D:\kimicode_repos\projects\my-gpt-research\gptr-mcp` 建 venv，
   gpt-researcher 从本地 fork 路径安装（保留补丁），按 quickstart.md 0b 的
   环境变量启动；验证 `GET /health` 200 + streamable-http 端点可 initialize
@@ -27,13 +27,13 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 2: Foundational（阻塞所有故事）
 
-- [ ] T003 `uv add mcp`（官方 MCP 客户端包，pin 版本进 lock；原则 V）
-- [ ] T004 嵌入助手共享化：把 `_embedding_config` / `_build_embedding_model` /
+- [X] T003 `uv add mcp`（官方 MCP 客户端包，pin 版本进 lock；原则 V）
+- [X] T004 嵌入助手共享化：把 `_embedding_config` / `_build_embedding_model` /
   `EMBEDDING_DIM` 等常量从 `orchestrator/persona_tinytroupe.py` 移到新模块
   `orchestrator/embedding.py`，persona 适配器改为 import（行为不变）；
   `tests/contract/test_tinytroupe_embedding.py` 的 import 路径同步更新，
   003 既有 15 项测试保持全绿
-- [ ] T005 [P] `orchestrator/store.py` 增加只读方法 `list_assets(type: str) -> list[dict]`
+- [X] T005 [P] `orchestrator/store.py` 增加只读方法 `list_assets(type: str) -> list[dict]`
   （原则 III：store 仍是唯一入口，仅多一个读方法），附离线测试
 
 **Checkpoint**: 基础就绪 —— embedding.py 可独立 import，store 可按类型列资产
@@ -49,7 +49,7 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T006 [US1] 新建 `tests/contract/test_research_pipeline.py`，mock 三层
+- [X] T006 [US1] 新建 `tests/contract/test_research_pipeline.py`，mock 三层
   （MCP call_tool / llm.chat_json / 时间）：
   成功路径（context+source_urls → 草稿 → put_asset 被调、溯源字段填充正确、
   asset_id 形态 `^(char|prop|scene|epoch)_[a-z0-9_]+$`）；
@@ -58,15 +58,15 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] 实现 `orchestrator/research.py`（依赖 T003-T005）：
+- [X] T007 [US1] 实现 `orchestrator/research.py`（依赖 T003-T005）：
   MCP 客户端封装（streamable-http 连接 `GPTR_MCP_URL`，call_tool 为可 mock 接缝，
   超时 `RESEARCH_TIMEOUT_S`）；管线 `research_asset(query, asset_type, store)`
   = deep_research → `llm.chat_json()` 按类型指引抽取 → asset_id/溯源填充
   （data-model.md 口径：retriever/model/researched_at/confidence/sources）→
   `store.put_asset()` 校验入库；抽取失败重试 1 次后干净报错
-- [ ] T008 [US1] 实现 `scripts/research_asset.py` CLI（`--query --type --db`），
+- [X] T008 [US1] 实现 `scripts/research_asset.py` CLI（`--query --type --db`），
   打印 asset_id 或明确错误；`GPTR_MCP_URL` 未设 → 明确提示缺失（FR-007）
-- [ ] T009 [US1] 真机验收（需 T002 服务端在线）：按 quickstart.md 场景 2 跑
+- [X] T009 [US1] 真机验收（需 T002 服务端在线）：按 quickstart.md 场景 2 跑
   人物 + 场景两个查询词，确认入库资产契约通过、溯源完整（SC-001）
 
 **Checkpoint**: US1 独立成立 —— 查询词到入库资产全链路可证
@@ -81,17 +81,17 @@ data-model.md ✅、quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T010 [US2] 在 `tests/contract/test_research_pipeline.py` 增加去重用例
+- [X] T010 [US2] 在 `tests/contract/test_research_pipeline.py` 增加去重用例
   （mock 嵌入调用）：余弦 ≥ 阈值 → 判重返回已有 asset_id 且 put_asset 零调用；
   < 阈值 → 正常入库；嵌入配置缺失/调用异常 → 降级 name 精确匹配 + 降级日志；
   阈值经 `RESEARCH_DEDUP_THRESHOLD` 环境变量可调
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] 在 `orchestrator/research.py` 接入去重（依赖 T004、T005、T007）：
+- [X] T011 [US2] 在 `orchestrator/research.py` 接入去重（依赖 T004、T005、T007）：
   入库前对 `name + appearance` 与同 type 库中资产（`list_assets`）做语义比对，
   比较文本与降级口径按 data-model.md「去重判定」
-- [ ] T012 [US2] 真机验收：按 quickstart.md 场景 3 跑同义查询，确认判重（SC-002）；
+- [X] T012 [US2] 真机验收：按 quickstart.md 场景 3 跑同义查询，确认判重（SC-002）；
   嵌入服务停掉再跑，确认降级提示与精确匹配路径
 
 **Checkpoint**: US1、US2 均独立成立
@@ -107,7 +107,7 @@ unset `GPTR_MCP_URL` 提示缺配置
 
 ### Tests for User Story 3
 
-- [ ] T013 [US3] 在 `tests/contract/test_research_pipeline.py` 增加用例：
+- [X] T013 [US3] 在 `tests/contract/test_research_pipeline.py` 增加用例：
   `GPTR_MCP_URL` 未设 → 明确报错且不发起任何网络调用；
   MCP 连接失败/调用超时 → 明确报错且 put_asset 零调用；
   全仓库 grep 无硬编码服务端地址（`orchestrator/` 与 `scripts/`）
@@ -118,10 +118,10 @@ unset `GPTR_MCP_URL` 提示缺配置
 
 ## Phase 6: Polish & 全量验收
 
-- [ ] T014 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004：001/002/003 不回归）
-- [ ] T015 按 `specs/004-research-pipeline/quickstart.md` 四场景逐一验证
+- [X] T014 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004：001/002/003 不回归）
+- [X] T015 按 `specs/004-research-pipeline/quickstart.md` 四场景逐一验证
   （离线回归 / 真机调研 / 语义去重 / 故障隔离）
-- [ ] T016 本文件全部任务标记 [X]，提交（建议
+- [X] T016 本文件全部任务标记 [X]，提交（建议
   `feat(004): research pipeline via gptr-mcp service`）
 
 ---
