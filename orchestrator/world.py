@@ -269,19 +269,22 @@ def run_world(store: Store, run_id: str, world_id: str,
 
     end_tick = start_tick + ticks - 1
     for tick in range(start_tick, end_tick + 1):
-        for seq, (cid, spec) in enumerate(personas, start=1):
+        seq = 0
+        for cid, spec in personas:
             perception = engine.perceive(cid)
-            action = backend.act(spec, _visible_state(perception, tick, cid))
-            engine_action = _map_to_engine_action(action)
-            if engine_action is not None:
-                verb, params = engine_action
-                engine.submit(cid, verb, params)
-            emitted = emit(
-                tick, seq, action["kind"], action["content"], [cid],
-                action.get("emotion", ""),
-                [prev_event_by_char[cid]] if cid in prev_event_by_char else [],
-            )
-            prev_event_by_char[cid] = emitted["event_id"]
+            actions = backend.act(spec, _visible_state(perception, tick, cid))
+            for action in actions:
+                seq += 1
+                engine_action = _map_to_engine_action(action)
+                if engine_action is not None:
+                    verb, params = engine_action
+                    engine.submit(cid, verb, params)
+                emitted = emit(
+                    tick, seq, action["kind"], action["content"], [cid],
+                    action.get("emotion", ""),
+                    [prev_event_by_char[cid]] if cid in prev_event_by_char else [],
+                )
+                prev_event_by_char[cid] = emitted["event_id"]
         engine.step()
         _snapshot(engine, recorder, store, world_id)
 
