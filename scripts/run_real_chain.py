@@ -34,6 +34,8 @@ def main() -> int:
 
     backend = TinyTroupeBackend()
     backend.reset_cost_stats()
+    mode = backend.semantic_mode
+    print(f"语义检索：{'真实嵌入服务' if mode == 'real' else f'已降级（{mode}）'}")
 
     init_db(args.db)
     store = Store(args.db)
