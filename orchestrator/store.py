@@ -111,6 +111,25 @@ class Store:
 
     # ---- 世界状态快照（006） ----
 
+    def put_world_config(self, world_id: str, config_json: str) -> None:
+        """写入世界定义（007 M5：create_world 与 run_simulation 的衔接）。"""
+        self._conn.execute(
+            "INSERT INTO worlds(world_id, config) VALUES(?, ?)"
+            " ON CONFLICT(world_id) DO UPDATE SET config=excluded.config,"
+            " updated_at=datetime('now')",
+            (world_id, config_json),
+        )
+        self._conn.commit()
+
+    def get_world_config(self, world_id: str) -> dict | None:
+        import json as _json
+        row = self._conn.execute(
+            "SELECT config FROM worlds WHERE world_id=?", (world_id,)
+        ).fetchone()
+        if row is None or not row["config"]:
+            return None
+        return _json.loads(row["config"])
+
     def put_world_state(self, world_id: str, tick: int, state_json: str) -> None:
         self._conn.execute(
             "UPDATE worlds SET state=?, tick=?, updated_at=datetime('now')"
