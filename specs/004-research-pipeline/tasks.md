@@ -146,3 +146,11 @@ T001 ∥ T002；T005 ∥ (T003, T004)；同文件任务（research.py 的 T007/T
 MVP = Phase 1-3（US1）：查询词到入库资产全链路成立即可演示核心价值；
 US2/US3 依次增量，每个故事完成后独立验收再继续。
 T002（服务端 spike）建议最先做 —— 它不阻塞仓库内开发，但 T009 真机验收依赖它。
+
+---
+
+## Phase 7: Convergence
+
+- [ ] T017 360search 限流恢复后，用同义查询词复验全链路（经 gptr-mcp）语义去重，确认库中对应资产数量为 1 per SC-002 (partial)
+- [ ] T018 更正 `specs/004-research-pipeline/quickstart.md` 0b 节：`pip install fastmcp` 改为 `fastmcp-slim[server]`（fastmcp 4.x 拆分，现写法实测启动失败），并补 `PYTHONUTF8=1` 启动要求 per plan: quickstart 触点 (partial)
+- [ ] T019 `orchestrator/research.py` 抽取重试纳入契约校验失败：`put_asset` schema 拒绝时重试一次抽取再报错，并补离线用例 per spec Edge Case「缺字段漂移可重试」 (partial)
