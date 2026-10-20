@@ -3,6 +3,7 @@ name = "narrative-sim"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "fastmcp-slim[server]>=4.1.1",
     "gptr-deepseek-retriever",
     "jsonschema>=4.26.0",
     "mcp>=2.3.0",
