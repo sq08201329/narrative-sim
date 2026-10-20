@@ -96,7 +96,7 @@ def test_happy_path_stores_contract_asset():
     assert asset_id.startswith("scene_")
     asset = store.put_calls[0]
     assert asset["asset_id"] == asset_id
-    assert asset["provenance"]["retriever"] == "gptr-mcp(searxng)"
+    assert asset["provenance"]["retriever"] == "gptr-mcp(deepseek-search)"
     assert asset["provenance"]["researched_at"] == "2026-10-20T13:00:00"
     assert asset["provenance"]["confidence"] == pytest.approx(0.7)  # 0.5 + 0.1×2
     assert asset["historical_context"]["sources"] == DEEP_RESEARCH_OK["source_urls"]
@@ -283,3 +283,21 @@ def test_dedup_threshold_from_env(monkeypatch):
     )
     assert asset_id != "scene_old"
     assert len(store.put_calls) == 1
+
+
+# ---------- 005 US2：溯源标签环境变量 ----------
+
+def test_retriever_label_from_env(monkeypatch):
+    monkeypatch.setenv("GPTR_MCP_RETRIEVER_LABEL", "gptr-mcp(searxng)")
+    store = FakeStore()
+    research_asset("q", "scene", store, call_tool=fake_call_tool(),
+                   chat_json=fake_chat_json(), now=lambda: "t")
+    assert store.put_calls[0]["provenance"]["retriever"] == "gptr-mcp(searxng)"
+
+
+def test_retriever_label_default(monkeypatch):
+    monkeypatch.delenv("GPTR_MCP_RETRIEVER_LABEL", raising=False)
+    store = FakeStore()
+    research_asset("q", "scene", store, call_tool=fake_call_tool(),
+                   chat_json=fake_chat_json(), now=lambda: "t")
+    assert store.put_calls[0]["provenance"]["retriever"] == "gptr-mcp(deepseek-search)"
