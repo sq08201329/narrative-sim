@@ -46,7 +46,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [X] T004 [US1] 新建 `tests/unit/test_persona_tinytroupe_embedding.py`：mock httpx 层
+- [X] T004 [US1] 新建 `tests/contract/test_tinytroupe_embedding.py`：mock httpx 层
   验证子类行为 —— 文档/查询请求体分别带正确任务前缀与 `model` 字段；空文本不发请求；
   超长文本截断到 `EMBEDDING_MAX_CHARS`；异常/超时返回 768 维零向量且不抛出
 
@@ -62,7 +62,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 - [X] T006 [US1] 扩展 `scripts/probe_embedding_service.py` 为完整召回探针（US1-AC2）：
   写入「相关文档」+ 若干干扰文档 → 经查询前缀检索，相关文档余弦高于无关文档，
   不满足则退出码非 0（不调 LLM，可作为验收门槛）
-- [X] T007 [US1] 在线验收：启动嵌入服务，`uv run pytest tests/unit/test_persona_tinytroupe_embedding.py`
+- [X] T007 [US1] 在线验收：启动嵌入服务，`uv run pytest tests/contract/test_tinytroupe_embedding.py`
   全绿；`uv run python scripts/probe_embedding_service.py` 退出码 0；
   `uv run python scripts/run_real_chain.py` 验收通过（≥5 事件、契约全过）
 
@@ -79,7 +79,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [X] T008 [US2] 在 `tests/unit/test_persona_tinytroupe_embedding.py` 增加降级用例：
+- [X] T008 [US2] 在 `tests/contract/test_tinytroupe_embedding.py` 增加降级用例：
   mock `/models` 不可达 / 模型名不在返回列表 / 最小调用抛异常 →
   均判定降级；降级后 `semantic_mode` 以 `"degraded: <原因>"` 形式给出原因
 
@@ -106,7 +106,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 3
 
-- [X] T011 [US3] 在 `tests/unit/test_persona_tinytroupe_embedding.py` 增加配置用例：
+- [X] T011 [US3] 在 `tests/contract/test_tinytroupe_embedding.py` 增加配置用例：
   未设 `EMBEDDING_API_BASE` → 直接降级不发起任何网络调用；指向 mock 端点的
   环境变量被实际用于预检与嵌入请求；全仓库 grep 无硬编码服务地址字面量
   （`127.0.0.1:9379` 之类不得出现在 `orchestrator/` 与 `scripts/run_real_chain.py`）
