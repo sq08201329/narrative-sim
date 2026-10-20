@@ -109,6 +109,24 @@ class Store:
         )
         self._conn.commit()
 
+    # ---- 世界状态快照（006） ----
+
+    def put_world_state(self, world_id: str, tick: int, state_json: str) -> None:
+        self._conn.execute(
+            "UPDATE worlds SET state=?, tick=?, updated_at=datetime('now')"
+            " WHERE world_id=?",
+            (state_json, tick, world_id),
+        )
+        self._conn.commit()
+
+    def get_world_state(self, world_id: str) -> tuple[int, str] | None:
+        row = self._conn.execute(
+            "SELECT tick, state FROM worlds WHERE world_id=?", (world_id,)
+        ).fetchone()
+        if row is None or row["state"] is None:
+            return None
+        return int(row["tick"]), row["state"]
+
     def max_event_no(self) -> int:
         """全库事件编号最大值（event_id 全局唯一，编号分配需跨运行连续）。"""
         row = self._conn.execute(
