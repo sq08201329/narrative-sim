@@ -39,14 +39,16 @@ SCENE_DRAFT = {
 class FakeStore:
     """记录 put_asset 调用并做最低限校验（模拟 schema 把关）。"""
 
-    def __init__(self, assets=None, reject=False):
+    def __init__(self, assets=None, reject=False, reject_times=0):
         self.put_calls = []
         self.assets = assets or []
         self.reject = reject
+        self.reject_times = reject_times
 
     def put_asset(self, asset):
         self.put_calls.append(asset)
-        if self.reject:
+        if self.reject or self.reject_times > 0:
+            self.reject_times -= 1
             raise ValueError("schema 校验失败")
         return asset["asset_id"]
 
@@ -143,6 +145,17 @@ def test_schema_rejection_no_write():
     assert all(True for _ in store.put_calls)  # put 被尝试但被校验拒绝
     # 关键：没有资产真正入库（FakeStore reject 时不落 assets）
     assert store.assets == []
+
+
+def test_schema_rejection_triggers_extraction_retry():
+    """T019：契约校验拒绝（缺字段类漂移）纳入抽取重试，第二次成功则入库。"""
+    store = FakeStore(reject_times=1)
+    cj = fake_chat_json()
+    asset_id = research_asset("q", "scene", store, call_tool=fake_call_tool(),
+                              chat_json=cj, now=lambda: "t")
+    assert asset_id.startswith("scene_")
+    assert len(cj.calls) == 2
+    assert len(store.put_calls) == 2
 
 
 def test_empty_sources_rejected():

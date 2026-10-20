@@ -193,23 +193,19 @@ def research_asset(query: str, asset_type: str, store, *,
     context = resp.get("context") or ""
 
     chat = chat_json if chat_json is not None else _llm.chat_json
-    draft, last_err = None, None
+    last_err = None
     for _ in range(EXTRACTION_RETRIES):
         try:
             draft = chat(_build_prompt(query, asset_type, context))
-            break
-        except Exception as exc:  # JSON 漂移等
+            asset = _compose_asset(draft, asset_type, source_urls, now)
+        except Exception as exc:  # JSON 漂移 / 缺 name 等
             last_err = exc
-    if draft is None:
-        raise ResearchError(f"结构化抽取失败（重试 {EXTRACTION_RETRIES} 次）: {last_err}")
-
-    asset = _compose_asset(draft, asset_type, source_urls, now)
-
-    duplicate = _find_duplicate(asset, store, embed)
-    if duplicate is not None:
-        return duplicate
-
-    try:
-        return store.put_asset(asset)
-    except Exception as exc:
-        raise ResearchError(f"资产契约校验失败: {exc}") from exc
+            continue
+        duplicate = _find_duplicate(asset, store, embed)
+        if duplicate is not None:
+            return duplicate
+        try:
+            return store.put_asset(asset)
+        except Exception as exc:  # 契约校验拒绝（缺字段类漂移）：重试一次抽取
+            last_err = exc
+    raise ResearchError(f"结构化抽取失败（重试 {EXTRACTION_RETRIES} 次）: {last_err}")

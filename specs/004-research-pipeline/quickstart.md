@@ -18,13 +18,16 @@ cd D:\kimicode_repos\projects\my-gpt-research\SearXNGforWindows
 cd D:\kimicode_repos\projects\my-gpt-research\gptr-mcp
 # 一次性：建 venv，requirements 中的 gpt-researcher 改为本地 fork 路径安装
 uv venv .venv
-.\.venv\Scripts\pip install fastmcp fastapi uvicorn python-dotenv loguru
+# 注意：必须装 fastmcp-slim[server] —— fastmcp 4.x 已拆分，直接装 fastmcp
+# 会在启动时报 "No module named 'mcp.server.request_state'"
+.\.venv\Scripts\pip install "fastmcp-slim[server]" fastapi uvicorn python-dotenv loguru httpx
 .\.venv\Scripts\pip install D:\kimicode_repos\projects\my-gpt-research\gpt-researcher
-# 每次启动（环境变量见下）
+# 每次启动（环境变量见下；PYTHONUTF8=1 必须，否则 GBK 控制台编码 emoji 崩溃）
+$env:PYTHONUTF8=1
 .\.venv\Scripts\python server.py
 ```
 
-服务端环境变量：`MCP_TRANSPORT=streamable-http`、`RETRIEVER=searx`、
+服务端环境变量：`PYTHONUTF8=1`、`MCP_TRANSPORT=streamable-http`、`RETRIEVER=searx`、
 `SEARX_URL=<你的 SearXNG 地址>`、`FAST_LLM/SMART_LLM/STRATEGIC_LLM=deepseek:deepseek-flash`、
 `DEEPSEEK_API_KEY=<密钥>`、`OPENAI_API_KEY=<同密钥，启动硬检查>`、
 `SMART_TOKEN_LIMIT=8000`、`STRATEGIC_TOKEN_LIMIT=8000`。
