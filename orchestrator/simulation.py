@@ -65,15 +65,18 @@ def run_simulation(
     emit(0, 0, "scene_change", f"场景：{scene['name']}。{visual}", character_ids)
 
     for tick in range(1, ticks + 1):
-        for seq, (cid, spec) in enumerate(personas, start=1):
-            action = backend.act(spec, {"tick": tick, "location": location_id,
-                                        "character_id": cid})
-            emitted = emit(
-                tick, seq, action["kind"], action["content"], [cid],
-                action.get("emotion", ""),
-                [prev_event_by_char[cid]] if cid in prev_event_by_char else [],
-            )
-            prev_event_by_char[cid] = emitted["event_id"]
+        seq = 0
+        for cid, spec in personas:
+            actions = backend.act(spec, {"tick": tick, "location": location_id,
+                                         "character_id": cid})
+            for action in actions:
+                seq += 1
+                emitted = emit(
+                    tick, seq, action["kind"], action["content"], [cid],
+                    action.get("emotion", ""),
+                    [prev_event_by_char[cid]] if cid in prev_event_by_char else [],
+                )
+                prev_event_by_char[cid] = emitted["event_id"]
 
     store.finish_run(run_id, "done")
     return events

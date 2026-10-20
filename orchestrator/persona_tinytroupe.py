@@ -156,7 +156,11 @@ class TinyTroupeBackend(PersonaBackend):
         from tinytroupe.clients import client
         return int(client().get_cost_stats().get("total_tokens", 0))
 
-    def act(self, persona_spec: dict, visible_state: dict) -> dict:
+    def act(self, persona_spec: dict, visible_state: dict) -> list[dict]:
+        """008 修复：收集一次 act() 的**全部**非 DONE 动作（保持产出顺序）。
+
+        TinyTroupe 协议强制 THINK 在 TALK 之前；002 版只取第一个动作，
+        导致 TALK 被系统性丢弃（"角色从不开口"缺陷的根因）。"""
         asset_id = visible_state.get("character_id") or persona_spec.get("name", "char_unknown")
         person = self._get_person(asset_id, persona_spec)
         person.listen(self._summarize_state(visible_state))
@@ -165,16 +169,19 @@ class TinyTroupeBackend(PersonaBackend):
         for _ in range(self._max_retries):
             try:
                 results = person.act(return_actions=True) or []
+                actions = []
                 for item in results:
                     kind = self._map_action(item.get("action", {}))
                     if kind is None:
                         continue
                     emotions = item.get("cognitive_state", {}).get("emotions", "")
-                    return {
+                    actions.append({
                         "kind": kind,
                         "content": item["action"].get("content", ""),
                         "emotion": str(emotions),
-                    }
+                    })
+                if actions:
+                    return actions
                 last_error = BackendActionError("本回合动作全部为 DONE")
             except Exception as e:  # LLM 结构漂移 / API 失败穿透
                 last_error = e

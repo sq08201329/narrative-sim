@@ -64,12 +64,12 @@ STATE = {"tick": 1, "location": "scene_yanyu_teahouse", "character_id": "char_su
 def test_talk_maps_to_dialogue(backend):
     FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "在下初到贵地。", "target": None}]
     out = backend.act(PERSONA, STATE)
-    assert out == {"kind": "dialogue", "content": "在下初到贵地。", "emotion": "平静而警觉"}
+    assert out == [{"kind": "dialogue", "content": "在下初到贵地。", "emotion": "平静而警觉"}]
 
 
 def test_think_maps_to_inner_voice(backend):
     FakeTinyPerson.scripted_actions = [{"type": "THINK", "content": "此处不宜久留。", "target": None}]
-    assert backend.act(PERSONA, STATE)["kind"] == "inner_voice"
+    assert backend.act(PERSONA, STATE)[0]["kind"] == "inner_voice"
 
 
 def test_done_is_skipped(backend):
@@ -77,7 +77,7 @@ def test_done_is_skipped(backend):
         {"type": "DONE", "content": "", "target": None},
         {"type": "TALK", "content": "告辞。", "target": None},
     ]
-    assert backend.act(PERSONA, STATE)["content"] == "告辞。"
+    assert backend.act(PERSONA, STATE)[0]["content"] == "告辞。"
 
 
 def test_person_cached_by_asset_id(backend):
@@ -124,3 +124,16 @@ def test_ultimate_failure_raises_and_emits_nothing(backend):
     FakeTinyPerson.fail_times = 5
     with pytest.raises(BackendActionError, match="重试"):
         backend.act(PERSONA, STATE)
+
+
+def test_full_action_sequence_collected_in_order(backend):
+    """008 修复回归：一次 act() 的 THINK→TALK→DONE 序列必须全部保留
+    （002 版只取第一个，TALK 被系统性丢弃——"角色从不开口"的根因）。"""
+    FakeTinyPerson.scripted_actions = [
+        {"type": "THINK", "content": "先想清楚。", "target": None},
+        {"type": "TALK", "content": "再开口说。", "target": None},
+        {"type": "DONE", "content": "", "target": None},
+    ]
+    out = backend.act(PERSONA, STATE)
+    assert [a["kind"] for a in out] == ["inner_voice", "dialogue"]
+    assert [a["content"] for a in out] == ["先想清楚。", "再开口说。"]
