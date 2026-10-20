@@ -146,6 +146,34 @@ class Store:
             return None
         return int(row["tick"]), row["state"]
 
+    # ---- 调研原料（009） ----
+
+    def put_material(self, asset_id: str, query: str, retriever: str,
+                     context: str) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO research_materials(asset_id, query, retriever, context)"
+            " VALUES(?,?,?,?)",
+            (asset_id, query, retriever, context),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def get_materials(self, asset_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT id, asset_id, query, retriever, context, created_at"
+            " FROM research_materials WHERE asset_id=? ORDER BY id",
+            (asset_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_material_by_query(self, query: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT id, asset_id, query, retriever, context, created_at"
+            " FROM research_materials WHERE query=? ORDER BY id DESC LIMIT 1",
+            (query,),
+        ).fetchone()
+        return dict(row) if row else None
+
     def max_event_no(self) -> int:
         """全库事件编号最大值（event_id 全局唯一，编号分配需跨运行连续）。"""
         row = self._conn.execute(
