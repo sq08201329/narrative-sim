@@ -148,3 +148,9 @@ T004（写测试）与 T003（写 client）可并行；其余串行。
 
 MVP = Phase 1-3（US1）：DeepSeek 检索腿全链路成立即交付核心价值；
 US2/US3 增量收口；T013 顺带关闭 004 遗留 T017。
+
+---
+
+## Phase 7: Convergence
+
+- [ ] T016 360search 限流恢复后，以 `RETRIEVER=searx` 重启 gptr-mcp 并跑通一次调研，验证 searx 腿在 005 插件安装后仍正常（US2/AC1 的 searx 侧 live 验证） per US2/AC1 (partial)
