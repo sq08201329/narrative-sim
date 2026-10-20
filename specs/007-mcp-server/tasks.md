@@ -13,14 +13,14 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ## Phase 1: Setup
 
-- [ ] T001 `uv add "fastmcp-slim[server]"`（005 实测形态）；验证
+- [X] T001 `uv add "fastmcp-slim[server]"`（005 实测形态）；验证
   `from fastmcp import FastMCP` 可 import 且既有 97 项离线测试不回归
 
 ---
 
 ## Phase 2: Foundational（阻塞所有故事）
 
-- [ ] T002 [P] `orchestrator/store.py` 增加 `put_world_config(world_id,
+- [X] T002 [P] `orchestrator/store.py` 增加 `put_world_config(world_id,
   config_json)` 与 `get_world_config(world_id) -> dict | None`
   （启用 worlds.config 列；原则 III：仅多两个方法），附离线测试
   （写读往返 / 无记录返回 None / 覆盖重写）
@@ -37,7 +37,7 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T003 [US1] 新建 `tests/contract/test_mcp_server.py`（fastmcp 进程内
+- [X] T003 [US1] 新建 `tests/contract/test_mcp_server.py`（fastmcp 进程内
   客户端 + tmp DB + 004/006 mock 接缝）：
   list_tools 六工具可见且带 schema；全链 research_asset（mock 调研接缝）
   → create_world → run_simulation（mock 后端，真实引擎）
@@ -47,12 +47,12 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ### Implementation for User Story 1
 
-- [ ] T004 [US1] 实现 `orchestrator/mcp_server.py`（依赖 T001、T002）：
+- [X] T004 [US1] 实现 `orchestrator/mcp_server.py`（依赖 T001、T002）：
   `build_server() -> FastMCP` + 六个工具薄封装（签名与返回口径见
   data-model.md）；create_world 预检资产缺口 + worlds.config 读写 +
   reset 口径；run_simulation 读 config 调 006 run_world
   （backend/resume 透传）；错误统一兜为 ToolError（`{类型}: {原因}`）
-- [ ] T005 [US1] 实现 `scripts/run_mcp_server.py`：读
+- [X] T005 [US1] 实现 `scripts/run_mcp_server.py`：读
   MCP_TRANSPORT（默认 streamable-http）/ MCP_HOST（默认 127.0.0.1）/
   MCP_PORT（默认 8300）后 `mcp.run()`；启动零外部检查
 
@@ -68,7 +68,7 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T006 [US2] 在 `tests/contract/test_mcp_server.py` 增加：
+- [X] T006 [US2] 在 `tests/contract/test_mcp_server.py` 增加：
   空 query / 非法 asset_type → ToolError 且无外部调用；
   不存在 world_id 调 run_simulation → 明确"世界不存在"错误；
   resume 无快照 → 明确错误；调研服务不可达（mock call_tool 抛
@@ -87,7 +87,7 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ### Tests for User Story 3（随 T003/T006 落地，此处确认完整）
 
-- [ ] T007 [US3] 确认 `tests/contract/test_mcp_server.py` 覆盖：
+- [X] T007 [US3] 确认 `tests/contract/test_mcp_server.py` 覆盖：
   web_search 返回结构化条目（title/url/summary）、无结果空列表；
   web_fetch 成功返回 {title, content}、不可抓返回可读失败说明
 
@@ -97,11 +97,11 @@ SC-003 全绿。测试任务先写并确认失败，再实现。
 
 ## Phase 6: Polish & 全量验收
 
-- [ ] T008 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-003）
-- [ ] T009 真机冒烟：启动 `scripts/run_mcp_server.py`，fastmcp Client 经
+- [X] T008 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-003）
+- [X] T009 真机冒烟：启动 `scripts/run_mcp_server.py`，fastmcp Client 经
   streamable-http list_tools + 调 web_search（真 API）+ run_simulation
   （mock 后端）验证传输层；按 quickstart.md 场景 4 验证错误语义
-- [ ] T010 本文件全部任务标记 [X]，提交（建议
+- [X] T010 本文件全部任务标记 [X]，提交（建议
   `feat(007): mcp server protocol layer (M5)`）
 
 ---
