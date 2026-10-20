@@ -28,8 +28,8 @@
 429 退避 2s/4s ≤2 次
 **Constraints**: 插件 100% 在仓库内、fork 零改动；插件任何路径不抛异常；
 004 管线行为兼容；M1-M4 不回归
-**Scale/Scope**: 1 个插件包（~120 行）+ 1 个测试文件 + research.py 一处
-标签改动 + .env.example / quickstart 文档
+**Scale/Scope**: 1 个插件包（client ~80 行 + retriever ~80 行）+ 1 个测试文件
++ research.py 一处标签改动 + .env.example / quickstart 文档
 
 ## Constitution Check
 
@@ -66,15 +66,16 @@ specs/005-deepseek-web-research/
 plugins/gptr-deepseek-retriever/
 ├── pyproject.toml             # entry-point: gpt_researcher.retrievers → deepseek
 └── gptr_deepseek_retriever/
-    ├── __init__.py            # 导出 DeepSeekSearchRetriever
-    └── deepseek.py            # retriever 类（Search/Fetch/容错/补抓闸门）
+    ├── __init__.py            # 导出 DeepSeekSearchRetriever / web_search / web_fetch
+    ├── client.py              # 两个独立工具函数（FR-009：HTTP+重试+容错唯一实现）
+    └── deepseek.py            # retriever 类（复用 client，字段映射/补抓闸门）
 
 orchestrator/
 └── research.py                # 一处改动：provenance.retriever 读
                                # GPTR_MCP_RETRIEVER_LABEL，默认 gptr-mcp(deepseek-search)
 
 tests/contract/
-└── test_gptr_deepseek_retriever.py  # 新增：插件离线测试（HTTP mock）
+└── test_gptr_deepseek_retriever.py  # 新增：工具函数 + retriever 离线测试（HTTP mock）
 
 .env.example                   # 加 GPTR_MCP_RETRIEVER_LABEL；插件侧变量在
                                # quickstart 文档化（服务端 venv 读取）

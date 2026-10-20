@@ -8,6 +8,10 @@ DeepSeek API 事实来自官方文档（api-docs.deepseek.com/zh-cn/guides/searc
 **Decision**: 在本仓库新建插件包 `plugins/gptr-deepseek-retriever/`，
 经 entry-point 组 `gpt_researcher.retrievers` 注册名为 `deepseek` 的 retriever，
 安装进 gptr-mcp venv 后 `RETRIEVER=deepseek` 生效。
+包内分两层：`client.py` 提供 `web_search()` / `web_fetch()` 两个独立工具函数
+（HTTP + 重试 + 容错的唯一实现，FR-009），`deepseek.py` 的 retriever 类
+复用它们做字段映射。主项目经 path 依赖引入该包，两个工具函数对
+orchestrator / 未来 M5 MCP server 直接可调。
 
 **机制证据**（fork 源码）:
 - `retrievers/utils.py:86-120`：retriever 白名单 = retrievers/ 子目录扫描
@@ -103,7 +107,7 @@ research.py 仅改默认值与读取逻辑，行为兼容）。
 
 ## R8: 依赖与回归面
 
-- 插件包依赖仅 httpx（随主项目 lock；gptr-mcp venv 装插件时一并解析）
+- 插件包依赖仅 httpx（主项目经 uv path 依赖引入，gptr-mcp venv 装插件时一并解析）
 - fork 零改动；gptr-mcp server.py 零改动；004 管线仅 retriever 标签默认值
   与 env 读取一处小改
 - M1/M2/003/004 回归兜底；T017（全链路同义去重复验）随 SC-002 一并关闭

@@ -55,7 +55,17 @@ uv run python scripts/research_asset.py --query "南宋临安的酒家" --type s
 
 预期：命中场景 4 的已有资产，返回相同 asset_id，库中 scene 数量为 1。
 
-## 6. 切回 searx 腿（US2，可选）
+## 6. 工具函数直调（FR-009，可选）
+
+```bash
+uv run python -c "
+from gptr_deepseek_retriever import web_search, web_fetch
+print(web_search('南宋 临安 酒楼', count=3)[0]['url'])
+print(web_fetch('https://example.com') )
+"
+```
+
+## 7. 切回 searx 腿（US2，可选）
 
 `RETRIEVER=searx` + `SEARX_URL=<地址>` 重启服务（SearXNG 需在线），
 `GPTR_MCP_RETRIEVER_LABEL=gptr-mcp(searxng)`，004 路径行为不变。

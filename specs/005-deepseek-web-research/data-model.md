@@ -15,6 +15,14 @@
 | rerank_score | number | ≥1.5 且正文摘要皆缺 → Fetch 补抓候选（按分数降序） |
 | date / authority / site_* | - | 丢弃（下游不读） |
 
+## 工具函数契约（FR-009，仓库内唯一实现）
+
+- `web_search(query, count=8, need_content=True) -> list[dict]`：
+  成功返回 SearchResult 条目列表（见上节）；无结果返回 []；
+  429/5xx 退避重试至上限后返回 []；401/402 打印原因返回 []；不抛异常
+- `web_fetch(url) -> dict | None`：成功返回 `{title, content}`；
+  403/404/超时返回 None（调用方跳源）；不抛异常
+
 ## GPT-R retriever 条目（插件输出，鸭子类型契约）
 
 | 键 | 内容 | 规则 |
