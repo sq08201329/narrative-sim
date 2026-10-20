@@ -25,7 +25,7 @@ uv venv .venv
 ```
 
 服务端环境变量：`MCP_TRANSPORT=streamable-http`、`RETRIEVER=searx`、
-`SEARX_URL=<你的 SearXNG 地址>`、`FAST_LLM/SMART_LLM/STRATEGIC_LLM=deepseek:deepseek-chat`、
+`SEARX_URL=<你的 SearXNG 地址>`、`FAST_LLM/SMART_LLM/STRATEGIC_LLM=deepseek:deepseek-flash`、
 `DEEPSEEK_API_KEY=<密钥>`、`OPENAI_API_KEY=<同密钥，启动硬检查>`、
 `SMART_TOKEN_LIMIT=8000`、`STRATEGIC_TOKEN_LIMIT=8000`。
 
