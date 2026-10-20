@@ -6,7 +6,7 @@
   仅有 DEEPSEEK_* 时桥接映射
 - TinyPerson 实例按 asset_id 缓存（全局注册表重名即报错，实例名直接用 asset_id）
 - 动作映射：TALK→dialogue、THINK→inner_voice、DONE 丢弃；emotion 取 cognitive_state
-- 语义记忆：EMBEDDING_API_BASE 已设且预检通过时，用 _PrefixedEmbedding 覆盖
+- 语义记忆：EMBEDDING_API_BASE 已设且预检通过时，用 embedding.py 的前缀嵌入模型覆盖
   Settings.embed_model（import 时默认实例会跟随 OPENAI_BASE_URL 指向 LLM 服务，
   必须在首个 TinyPerson 创建前覆盖）；否则降级为本地列表（只存不检）
 """
@@ -15,15 +15,12 @@ import os
 
 from dotenv import load_dotenv
 
+from .embedding import build_embedding_model, embedding_config, preflight_embedding
 from .persona import PersonaBackend
 
 logger = logging.getLogger(__name__)
 
 MAX_ACT_RETRIES = 3
-EMBEDDING_DIM = 768
-DOC_PREFIX = "task: search result | text: "
-QUERY_PREFIX = "task: search query | text: "
-DEFAULT_EMBEDDING_MODEL = "eg2-text-270m.litertlm"
 
 
 class MissingEnvironmentError(RuntimeError):
@@ -51,108 +48,6 @@ def _register_json_mode_client() -> None:
     register_client("openai", JsonModeClient())
 
 
-def _embedding_config() -> dict | None:
-    """从环境变量读取嵌入服务配置；EMBEDDING_API_BASE 未设返回 None（走降级）。"""
-    base = os.environ.get("EMBEDDING_API_BASE", "").strip()
-    if not base:
-        return None
-    return {
-        "api_base": base.rstrip("/"),
-        "model": os.environ.get("EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-        "timeout_s": float(os.environ.get("EMBEDDING_TIMEOUT_S", "10")),
-        "max_chars": int(os.environ.get("EMBEDDING_MAX_CHARS", "2000")),
-    }
-
-
-def _preflight_embedding(cfg: dict) -> str | None:
-    """可达性 + 模型身份预检（FR-002）。返回 None 表示通过，否则返回失败原因。"""
-    import httpx
-
-    try:
-        r = httpx.get(f"{cfg['api_base']}/models", timeout=5)
-        r.raise_for_status()
-        ids = [m.get("id") for m in r.json().get("data", [])]
-        if cfg["model"] not in ids:
-            return f"模型 {cfg['model']} 不在服务模型列表 {ids}"
-        e = httpx.post(
-            f"{cfg['api_base']}/embeddings",
-            json={"model": cfg["model"], "input": "ping"},
-            timeout=min(cfg["timeout_s"], 10),
-        )
-        e.raise_for_status()
-        dim = len(e.json()["data"][0]["embedding"])
-        if dim != EMBEDDING_DIM:
-            return f"向量维度 {dim} != {EMBEDDING_DIM}"
-    except Exception as exc:
-        return f"嵌入服务预检失败: {exc}"
-    return None
-
-
-def _build_embedding_model(cfg: dict):
-    """构造带任务前缀与失败兜底的嵌入模型（research.md R1/R2/R4）。
-
-    - model_name= 绕开 OpenAIEmbeddingModelType 枚举白名单
-    - 文档/查询分别补 EmbeddingGemma 2 任务前缀（litert-lm 服务端不加）
-    - 空文本不发请求、超长截断；异常/超时返回零向量，仿真不崩溃
-    """
-    from llama_index.embeddings.openai import OpenAIEmbedding
-
-    max_chars = cfg["max_chars"]
-    zero = [0.0] * EMBEDDING_DIM
-
-    class PrefixedEmbedding(OpenAIEmbedding):
-        _failure_logged = False
-
-        def _fallback(self, reason) -> list[float]:
-            if not PrefixedEmbedding._failure_logged:
-                logger.warning("嵌入调用失败，返回零向量（后续失败不再重复日志）: %s", reason)
-                PrefixedEmbedding._failure_logged = True
-            return list(zero)
-
-        def _prepare(self, text: str) -> str | None:
-            if not text or not text.strip():
-                return None
-            return text[:max_chars]
-
-        def _get_query_embedding(self, query: str) -> list[float]:
-            text = self._prepare(query)
-            if text is None:
-                return list(zero)
-            try:
-                return super()._get_query_embedding(QUERY_PREFIX + text)
-            except Exception as exc:
-                return self._fallback(exc)
-
-        def _get_text_embedding(self, text: str) -> list[float]:
-            prepared = self._prepare(text)
-            if prepared is None:
-                return list(zero)
-            try:
-                return super()._get_text_embedding(DOC_PREFIX + prepared)
-            except Exception as exc:
-                return self._fallback(exc)
-
-        def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
-            prepared = [self._prepare(t) for t in texts]
-            try:
-                vecs = super()._get_text_embeddings(
-                    [DOC_PREFIX + t for t in prepared if t is not None]
-                )
-            except Exception as exc:
-                return [self._fallback(exc) for _ in texts]
-            it = iter(vecs)
-            return [next(it) if t is not None else list(zero) for t in prepared]
-
-    return PrefixedEmbedding(
-        model_name=cfg["model"],
-        api_base=cfg["api_base"],
-        api_key="local-embedding",
-        embed_batch_size=10,
-        timeout=cfg["timeout_s"],
-        max_retries=1,
-    )
-
-
 class TinyTroupeBackend(PersonaBackend):
     def __init__(self, person_cls=None, max_retries: int = MAX_ACT_RETRIES):
         load_dotenv()
@@ -174,11 +69,11 @@ class TinyTroupeBackend(PersonaBackend):
 
     def _setup_semantic_mode(self) -> None:
         """预检嵌入服务：通过则覆盖 Settings.embed_model，否则走 002 降级。"""
-        cfg = _embedding_config()
-        reason = "未设置 EMBEDDING_API_BASE" if cfg is None else _preflight_embedding(cfg)
+        cfg = embedding_config()
+        reason = "未设置 EMBEDDING_API_BASE" if cfg is None else preflight_embedding(cfg)
         if reason is None:
             from llama_index.core import Settings
-            Settings.embed_model = _build_embedding_model(cfg)
+            Settings.embed_model = build_embedding_model(cfg)
             self.semantic_mode = "real"
             logger.info("语义记忆：真实嵌入模式（%s）", cfg["model"])
         else:

@@ -67,6 +67,16 @@ class Store:
             raise KeyError(f"资产不存在: {asset_id}")
         return json.loads(row["payload"])
 
+    def list_assets(self, type: str | None = None) -> list[dict]:
+        """按类型列出资产（调研去重用）；type 为 None 时列全部。"""
+        if type is None:
+            rows = self._conn.execute("SELECT payload FROM assets").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT payload FROM assets WHERE type=?", (type,)
+            ).fetchall()
+        return [json.loads(r["payload"]) for r in rows]
+
     # ---- 运行与世界 ----
 
     def run_exists(self, run_id: str) -> bool:
