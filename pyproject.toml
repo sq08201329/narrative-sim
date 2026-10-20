@@ -9,6 +9,7 @@ dependencies = [
     "openai>=3.35.1",
     "python-dotenv>=1.2.4",
     "tinytroupe",
+    "worldseed",
 ]
 
 [dependency-groups]
@@ -24,6 +25,7 @@ markers = [
 [tool.uv.sources]
 tinytroupe = { git = "https://github.com/microsoft/TinyTroupe.git", rev = "a6244b358a1fe1c71bf751f7ba0f8dfa368ec5a4" }
 gptr-deepseek-retriever = { workspace = true, editable = true }
+worldseed = { path = "D:/kimicode_repos/projects/my_mas/WorldSeed", editable = true }
 
 [tool.uv.workspace]
 members = [
