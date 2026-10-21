@@ -591,3 +591,25 @@ def test_memory_from_wired_through_tools(mcp):
                               "ticks": 1, "backend": "mock",
                               "memory_from": "run_prev"})
     assert r.data["run_id"] == "run4"
+
+
+# ---------- 存量资产 pin 回归（真机发现的缺口） ----------
+
+def test_legacy_asset_pin_resolvable(mcp):
+    """011 前入库的资产（无修订行）：create_world 自动补建 rev0，pin 可解析。"""
+    import os
+    from db.init_db import init as init_db
+    db = os.environ["NARRATIVE_DB"]
+    init_db(db)
+    s = Store(db)
+    # 模拟存量：删掉全部修订行
+    s._conn.execute("DELETE FROM asset_revisions")
+    s._conn.commit()
+    s.close()
+
+    call(mcp, "create_world", {"world_id": "w_leg",
+                               "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    r = call(mcp, "run_simulation", {"world_id": "w_leg", "run_id": "r_leg",
+                                     "ticks": 1, "backend": "mock"})
+    assert r.data["event_count"] == 2

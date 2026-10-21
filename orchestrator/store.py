@@ -163,6 +163,17 @@ class Store:
             raise KeyError(f"资产不存在: {asset_id}")
         return int(row["current_revision"])
 
+    def ensure_revision0(self, asset_id: str) -> None:
+        """存量资产（011 前入库、无修订行）以当前内容补建 revision 0，
+        保证版号锚点可解析（幂等）。"""
+        if self._revision_count(asset_id) > 0:
+            return
+        current = self.get_asset(asset_id)
+        self._insert_revision(asset_id, json.dumps(current,
+                                                   ensure_ascii=False),
+                              None, "存量资产建档", "system")
+        self._conn.commit()
+
     def list_world_configs(self) -> list[dict]:
         """全部世界的 {world_id, config(已解析)}（修订 impacted 反查用）。"""
         rows = self._conn.execute(

@@ -73,6 +73,8 @@ def build_server() -> FastMCP:
                 raise ToolError(
                     f"WorldExists: world {world_id} 已存在（reset=True 可覆盖）")
             cfg = _build_scene_config(store, character_ids, location_id)
+            for aid in [*character_ids, location_id]:
+                store.ensure_revision0(aid)  # 存量资产补建 rev0，pin 可解析
             pins = {aid: store.current_revision(aid)
                     for aid in [*character_ids, location_id]}
             store.put_world_config(world_id, json.dumps(
@@ -383,6 +385,8 @@ def build_server() -> FastMCP:
             if store.run_exists(new_run_id):
                 raise ToolError(f"RunExists: run {new_run_id} 已存在")
             if use_latest:
+                for aid in [*cfg["character_ids"], cfg["location_id"]]:
+                    store.ensure_revision0(aid)
                 cfg["revisions"] = {
                     aid: store.current_revision(aid)
                     for aid in [*cfg["character_ids"], cfg["location_id"]]}
