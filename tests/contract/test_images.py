@@ -165,3 +165,11 @@ def test_prompt_override_traced(store):
     assert provider.calls[0]["prompt"] == "加强：眼神更阴鸷"
     assert store.list_image_generations("char_a")[0]["prompt"] == \
         "加强：眼神更阴鸷"
+
+
+def test_minimax_missing_key(monkeypatch):
+    """SC-005：缺密钥时报错消息指明键名。"""
+    from orchestrator.images import ImageGenError, MinimaxImageProvider
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
+    with pytest.raises(ImageGenError, match="MINIMAX_API_KEY"):
+        MinimaxImageProvider().generate("p", 1, "2:3")

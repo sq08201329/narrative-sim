@@ -125,3 +125,10 @@ contracts/images.md ✅、quickstart.md ✅
 
 MVP = Phase 1-3（US1）：单资产出图全链。US2 提示词增强，US3 移交收口，
 Polish 接 MCP 与真机出图验收。
+
+---
+
+## Phase 7: Convergence
+
+- [x] T016 补缺密钥报错测试 per SC-005（delenv MINIMAX_API_KEY 后
+  MinimaxImageProvider.generate 抛 ImageGenError 且消息含键名）(partial)
