@@ -63,18 +63,23 @@ def build_server() -> FastMCP:
     def create_world(world_id: str, character_ids: list[str],
                      location_id: str, reset: bool = False) -> dict:
         """从资产库组装世界并登记（world_id 供 run_simulation 使用）。
-        资产缺失会明确指出缺口；world_id 已存在时需 reset=True 覆盖。"""
+        资产缺失会明确指出缺口；world_id 已存在时需 reset=True 覆盖。
+        建世界时冻结各资产的修订版号（011 FR-008），后续修订不影响本世界。"""
         store = _store()
         try:
             if store.get_world_config(world_id) is not None and not reset:
                 raise ToolError(
                     f"WorldExists: world {world_id} 已存在（reset=True 可覆盖）")
             cfg = _build_scene_config(store, character_ids, location_id)
+            pins = {aid: store.current_revision(aid)
+                    for aid in [*character_ids, location_id]}
             store.put_world_config(world_id, json.dumps(
-                {"character_ids": character_ids, "location_id": location_id},
+                {"character_ids": character_ids, "location_id": location_id,
+                 "revisions": pins},
                 ensure_ascii=False))
             return {"world_id": world_id, "characters": character_ids,
-                    "location": location_id, "action_count": len(cfg["actions"])}
+                    "location": location_id, "action_count": len(cfg["actions"]),
+                    "revision_pins": pins}
         except ToolError:
             raise
         except Exception as e:
@@ -85,10 +90,14 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def run_simulation(world_id: str, run_id: str, ticks: int,
                        backend: str = "tinytroupe",
-                       resume: bool = False) -> dict:
+                       resume: bool = False, dm: bool = False,
+                       dm_max_calls: int = 50,
+                       dm_knowledge_chars: int = 2000) -> dict:
         """跑仿真：world_id 需先 create_world；resume=True 从最近快照续跑。
         backend=tinytroupe（默认真后端，每 tick 每角色约 15-30s）或 mock（离线演示）。
-        返回 {run_id, event_count, ticks, cost_tokens}。"""
+        dm=True 启用真实裁决（010，需 DEEPSEEK_API_KEY，每次裁决一次模型调用）。
+        返回 {run_id, event_count, ticks, cost_tokens}；dm=True 时另含
+        dm_calls/dm_failed。"""
         store = _store()
         try:
             cfg = store.get_world_config(world_id)
@@ -102,14 +111,25 @@ def build_server() -> FastMCP:
                 from .persona_tinytroupe import TinyTroupeBackend
                 be = TinyTroupeBackend()
                 be.reset_cost_stats()
+            dm_options = None
+            if dm:
+                from .world import DMOptions
+                dm_options = DMOptions(knowledge_chars=dm_knowledge_chars,
+                                       max_calls=dm_max_calls)
             events = _run_world(store, run_id, world_id, cfg["character_ids"],
-                                cfg["location_id"], ticks, be, resume=resume)
+                                cfg["location_id"], ticks, be, resume=resume,
+                                dm=dm_options, pins=cfg.get("revisions"))
             cost = None
             if backend != "mock":
                 cost = be.collect_total_tokens()
                 store.update_run_cost(run_id, cost)
-            return {"run_id": run_id, "event_count": len(events),
-                    "ticks": ticks, "cost_tokens": cost}
+            result = {"run_id": run_id, "event_count": len(events),
+                      "ticks": ticks, "cost_tokens": cost}
+            if dm:
+                calls = store.list_dm_calls(run_id)
+                result["dm_calls"] = len(calls)
+                result["dm_failed"] = sum(1 for c in calls if c["failed"])
+            return result
         except ToolError:
             raise
         except Exception as e:
@@ -315,6 +335,68 @@ def build_server() -> FastMCP:
                 return _export(store, world_id, out_dir, run_id, overwrite)
             except KeyError:
                 raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 FR-014：立项调研 ----
+
+    @mcp.tool()
+    def research_brief(theme: str) -> dict:
+        """立项调研（009）：题材 → 三类清单 → 批量执行入库（含去重漏斗）。
+        返回 {brief, ledger}。注意：每条调研一次外部调用，分钟级耗时，
+        按次产生检索与模型成本（宪章 VI）。"""
+        from .brief import execute_brief as _execute
+        from .brief import generate_brief as _generate
+        store = _store()
+        try:
+            brief = _generate(theme)
+            ledger = _execute(brief, store)
+            return {"brief": brief, "ledger": ledger}
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 US4：重拍 ----
+    @mcp.tool()
+    def reshoot(world_id: str, new_run_id: str, ticks: int,
+                use_latest: bool = False, backend: str = "mock",
+                dm: bool = False) -> dict:
+        """重拍某世界：use_latest=False 按冻结版号原样重跑；True 把版号
+        重钉到各资产当前版（先 revise_asset 再重拍即修订重拍）。
+        产出新 run，事件编号全局连续，两版并存可 diff。"""
+        store = _store()
+        try:
+            cfg = store.get_world_config(world_id)
+            if cfg is None:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+            if store.run_exists(new_run_id):
+                raise ToolError(f"RunExists: run {new_run_id} 已存在")
+            if use_latest:
+                cfg["revisions"] = {
+                    aid: store.current_revision(aid)
+                    for aid in [*cfg["character_ids"], cfg["location_id"]]}
+                store.put_world_config(world_id, json.dumps(
+                    cfg, ensure_ascii=False))
+            if backend == "mock":
+                be = MockPersonaBackend()
+            else:
+                from .persona_tinytroupe import TinyTroupeBackend
+                be = TinyTroupeBackend()
+            dm_options = None
+            if dm:
+                from .world import DMOptions
+                dm_options = DMOptions()
+            events = _run_world(store, new_run_id, world_id,
+                                cfg["character_ids"], cfg["location_id"],
+                                ticks, be, dm=dm_options,
+                                pins=cfg.get("revisions"))
+            return {"run_id": new_run_id, "event_count": len(events),
+                    "revision_pins": cfg.get("revisions") or {}}
         except ToolError:
             raise
         except Exception as e:

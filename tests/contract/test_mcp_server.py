@@ -39,7 +39,11 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   # 011 US2 修订
                   "revise_asset", "rollback_asset",
                   # 011 US3 移交
-                  "export_handoff"}
+                  "export_handoff",
+                  # 011 US4 重拍
+                  "reshoot",
+                  # 011 FR-014 立项
+                  "research_brief"}
 
 
 @pytest.fixture()
@@ -363,3 +367,117 @@ def test_export_handoff_via_mcp(mcp, tmp_path):
     with pytest.raises(ToolError, match="WorldNotFound"):
         call(mcp, "export_handoff", {"world_id": "ghost",
                                      "out_dir": str(tmp_path / "h2")})
+
+
+# ---------- 011 US4：版号锚点与重拍 ----------
+
+def test_create_world_freezes_revision_pins(mcp):
+    call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    call(mcp, "revise_asset", {"asset_id": "char_a",
+                               "patch": {"name": "甲改"}, "reason": "改名"})
+    # 世界 config 冻结的是建世界时的 rev0
+    r = call(mcp, "get_asset", {"asset_id": "char_a"})
+    assert r.data["current_revision"] == 1  # 当前版已前移
+    # run_simulation 仍按 pin 用旧卡（事件里角色名仍是"甲"）
+    call(mcp, "run_simulation", {"world_id": "w1", "run_id": "run1",
+                                 "ticks": 3, "backend": "mock"})
+    r = call(mcp, "get_events", {"run_id": "run1"})
+    contents = json.dumps(r.data["events"], ensure_ascii=False)
+    assert "甲改" not in contents and "甲" in contents
+
+
+def test_reshoot_original_and_latest(mcp):
+    call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    call(mcp, "run_simulation", {"world_id": "w1", "run_id": "run1",
+                                 "ticks": 2, "backend": "mock"})
+    # 原样重拍：pin 不变
+    r = call(mcp, "reshoot", {"world_id": "w1", "new_run_id": "run2",
+                              "ticks": 2, "backend": "mock"})
+    assert r.data["revision_pins"]["char_a"] == 0
+    # 修订后用 use_latest 重拍：新 run 用新卡
+    call(mcp, "revise_asset", {"asset_id": "char_a",
+                               "patch": {"name": "甲改"}, "reason": "改名"})
+    r = call(mcp, "reshoot", {"world_id": "w1", "new_run_id": "run3",
+                              "ticks": 2, "backend": "mock",
+                              "use_latest": True})
+    assert r.data["revision_pins"]["char_a"] == 1
+    r = call(mcp, "get_events", {"run_id": "run3"})
+    assert "甲改" in json.dumps(r.data["events"], ensure_ascii=False)
+    # 三版并存，event_id 全局连续零冲突
+    ids = []
+    for run in ("run1", "run2", "run3"):
+        ids += [e["event_id"]
+                for e in call(mcp, "get_events", {"run_id": run}).data["events"]]
+    assert len(ids) == len(set(ids))
+
+
+def test_reshoot_errors(mcp):
+    with pytest.raises(ToolError, match="WorldNotFound"):
+        call(mcp, "reshoot", {"world_id": "ghost", "new_run_id": "r",
+                              "ticks": 1, "backend": "mock"})
+    call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    call(mcp, "run_simulation", {"world_id": "w1", "run_id": "run1",
+                                 "ticks": 1, "backend": "mock"})
+    with pytest.raises(ToolError, match="RunExists"):
+        call(mcp, "reshoot", {"world_id": "w1", "new_run_id": "run1",
+                              "ticks": 1, "backend": "mock"})
+
+
+def test_run_simulation_dm_false_compat_anchor(mcp):
+    """dm 缺省（False）时返回键与 007 版一致（FR-013 兼容锚点）。"""
+    call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    r = call(mcp, "run_simulation", {"world_id": "w1", "run_id": "run1",
+                                     "ticks": 1, "backend": "mock"})
+    assert set(r.data) == {"run_id", "event_count", "ticks", "cost_tokens"}
+
+
+def test_run_simulation_dm_true_offline(mcp, monkeypatch):
+    """dm=True 但不构造真实 provider（monkeypatch 假裁决器），返回带裁决计数。"""
+    from worldseed.dm.providers.mock import MockDMProvider
+    from worldseed.protocol.dm import DMResponse
+    from orchestrator import world as world_mod
+
+    monkeypatch.setattr(
+        world_mod, "build_dm_provider",
+        lambda options: MockDMProvider(responses={
+            "act": DMResponse(narrative="测试裁决", effects=[])}))
+    call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    r = call(mcp, "run_simulation", {"world_id": "w1", "run_id": "run1",
+                                     "ticks": 1, "backend": "mock",
+                                     "dm": True})
+    assert r.data["dm_calls"] == 1  # tick1 mock 剧本出一个 act
+    assert r.data["dm_failed"] == 0
+
+
+# ---------- 011 FR-014：立项调研（MCP 面，mock 接缝零外部调用） ----------
+
+def test_research_brief_via_mcp(mcp, monkeypatch):
+    import orchestrator.brief as brief_mod
+
+    monkeypatch.setattr(brief_mod, "generate_brief",
+                        lambda theme, **kw: {"theme": theme, "items": [
+                            {"query": "q1", "category": "character",
+                             "asset_type": "character"}]})
+    monkeypatch.setattr(brief_mod, "execute_brief",
+                        lambda brief, store, **kw: [
+                            {"query": "q1", "category": "character",
+                             "status": "stored", "asset_id": "char_x",
+                             "reason": None}])
+    r = call(mcp, "research_brief", {"theme": "南宋谍战"})
+    assert r.data["brief"]["theme"] == "南宋谍战"
+    assert r.data["ledger"][0]["status"] == "stored"
+
+
+def test_research_brief_failure_readable(mcp, monkeypatch):
+    import orchestrator.brief as brief_mod
+
+    def boom(theme, **kw):
+        raise ConnectionError("gptr-mcp unreachable")
+    monkeypatch.setattr(brief_mod, "generate_brief", boom)
+    with pytest.raises(ToolError, match="ConnectionError"):
+        call(mcp, "research_brief", {"theme": "x"})

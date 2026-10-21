@@ -13,7 +13,7 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ## Phase 1: Setup（表与迁移）
 
-- [ ] T001 `db/init_db.py`：`asset_revisions` 幂等 DDL（UNIQUE(asset_id,
+- [x] T001 `db/init_db.py`：`asset_revisions` 幂等 DDL（UNIQUE(asset_id,
   revision) + idx_revisions_asset 索引，结构见 data-model.md）+
   `assets.current_revision INTEGER NOT NULL DEFAULT 0` 列的幂等迁移
   （PRAGMA table_info 检测，老库 ALTER TABLE ADD COLUMN）
@@ -22,13 +22,13 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ## Phase 2: Foundational（修订存储原语，阻塞全部故事）
 
-- [ ] T002 `orchestrator/store.py` 修订原语：`put_revision(asset_id, payload,
+- [x] T002 `orchestrator/store.py` 修订原语：`put_revision(asset_id, payload,
   patch, reason, author) -> int`（自动取下一版号）/ `get_revision` /
   `list_revisions`（升序）/ `get_asset_at_revision` /
   `set_current_revision`（含 payload 回填）；`put_asset` 改造：首建自动写
   revision 0（author 取 provenance.retriever 缺省 "system"），已有修订且
   payload 变化时自动升版（author="system:put_asset"，research.md R2）
-- [ ] T003 `tests/contract/test_revision.py` 存储层用例（真实 SQLite tmp 库）：
+- [x] T003 `tests/contract/test_revision.py` 存储层用例（真实 SQLite tmp 库）：
   rev0 自动建立 / REPLACE 变化自动升版 / 指针回填不变量
   （assets.payload == revisions[current].payload）/ 老库迁移（先建无
   current_revision 列的库再 init）
@@ -45,7 +45,7 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T004 [US1] `tests/contract/test_mcp_server.py` 追加：list_assets /
+- [x] T004 [US1] `tests/contract/test_mcp_server.py` 追加：list_assets /
   get_asset（含 current_revision 与 secrecy 标注）/ get_materials /
   search_materials（大小写不敏感子串）/ get_events / get_world_state /
   list_dm_calls；不存在对象分别返回 AssetNotFound / RunNotFound /
@@ -53,7 +53,7 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] `orchestrator/mcp_server.py` 实现 7 个读工具薄封装
+- [x] T005 [US1] `orchestrator/mcp_server.py` 实现 7 个读工具薄封装
   （契约见 contracts/mcp-tools.md 读工具节；全部为 store 方法透传 +
   ToolError 词汇表）
 
@@ -70,21 +70,21 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T006 [US2] `tests/contract/test_revision.py` 追加业务层用例：
+- [x] T006 [US2] `tests/contract/test_revision.py` 追加业务层用例：
   revise merge patch 深合并（None 删键）/ 空 patch 与非 dict 拒绝
   （BadPatch）/ base_revision 乐观锁 RevisionConflict / impacted_runs
   反查 worlds.config pin / rollback 回填 + stale_worlds 标记 /
   RevisionNotFound / **三冻结面逐字节断言**（FR-009）
-- [ ] T007 [US2] `tests/contract/test_mcp_server.py` 追加：
+- [x] T007 [US2] `tests/contract/test_mcp_server.py` 追加：
   revise_asset / rollback_asset 经 MCP 调用与错误词汇
 
 ### Implementation for User Story 2
 
-- [ ] T008 [US2] 实现 `orchestrator/revision.py`：RevisionError 族 +
+- [x] T008 [US2] 实现 `orchestrator/revision.py`：RevisionError 族 +
   `_merge_patch`（深合并，None 删键）+ `revise`（校验 → 合并 →
   put_revision → impacted_runs + warning 文案）+ `rollback` +
   `impacted_runs`（worlds.config revisions 反查 + run 列表）
-- [ ] T009 [US2] `orchestrator/mcp_server.py` 接 revise_asset /
+- [x] T009 [US2] `orchestrator/mcp_server.py` 接 revise_asset /
   rollback_asset 两工具（薄封装 + 错误词汇映射）
 
 **Checkpoint**: US2 测试全绿 + 回归绿
@@ -100,7 +100,7 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ### Tests for User Story 3（先写，确认失败）
 
-- [ ] T010 [US3] `tests/contract/test_handoff.py`：目录布局齐全 /
+- [x] T010 [US3] `tests/contract/test_handoff.py`：目录布局齐全 /
   manifest format/counts/sha256/revision_pins/secrecy 字段 / 空世界
   events 与 dm_calls 为空数组 / 已存在拒绝覆盖（HandoffExists）与
   overwrite=True / assets 文件含 secret 且带密级标注 / materials 按资产
@@ -108,10 +108,10 @@ contracts/mcp-tools.md ✅、quickstart.md ✅
 
 ### Implementation for User Story 3
 
-- [ ] T011 [US3] 实现 `orchestrator/handoff.py`：export_handoff(store,
+- [x] T011 [US3] 实现 `orchestrator/handoff.py`：export_handoff(store,
   world_id, out_dir, run_id=None, overwrite=False)（目录布局与 manifest
   字段见 data-model.md；sha256 逐文件实算；run_id 缺省取该世界最近 run）
-- [ ] T012 [US3] `orchestrator/mcp_server.py` 接 export_handoff 工具
+- [x] T012 [US3] `orchestrator/mcp_server.py` 接 export_handoff 工具
 
 **Checkpoint**: US3 测试全绿 + 回归绿
 
@@ -126,7 +126,7 @@ event_id 零冲突（quickstart 重拍演示）
 
 ### Tests for User Story 4（先写，确认失败）
 
-- [ ] T013 [US4] `tests/contract/test_revision.py` 追加：create_world 冻结
+- [x] T013 [US4] `tests/contract/test_revision.py` 追加：create_world 冻结
   revisions pin / run_simulation 按 pin 取旧卡（修订后行为不变）/
   reshoot(use_latest=True) 重钉版用新卡 / 三 run event_id 全局连续零冲突 /
   reshoot 到不存在世界 WorldNotFound、run_id 冲突 RunExists /
@@ -134,7 +134,7 @@ event_id 零冲突（quickstart 重拍演示）
 
 ### Implementation for User Story 4
 
-- [ ] T014 [US4] `orchestrator/world.py`：build_scene_config 增加
+- [x] T014 [US4] `orchestrator/world.py`：build_scene_config 增加
   `pins: dict | None` 参数（非 None 时按 get_asset_at_revision 取卡，
   None 为现状兼容）；`orchestrator/mcp_server.py`：create_world 冻结
   revisions pin / run_simulation 按 pin 传参 + dm/dm_max_calls/
@@ -146,13 +146,13 @@ event_id 零冲突（quickstart 重拍演示）
 
 ## Phase 7: Polish & 收尾
 
-- [ ] T015 [P] `orchestrator/mcp_server.py` 接 research_brief(theme) 工具
+- [x] T015 [P] `orchestrator/mcp_server.py` 接 research_brief(theme) 工具
   （FR-014，薄封装 orchestrator/brief.py generate_brief + execute_brief，
   docstring 标注成本量级）；离线 mock 接缝测试
-- [ ] T016 全量回归 `uv run pytest -m "not real" -q` 全绿；真机冒烟
+- [x] T016 全量回归 `uv run pytest -m "not real" -q` 全绿；真机冒烟
   （quickstart 真机联调：NARRATIVE_DB=yanyu.db 起服务，读路径 + 修订 +
   移交包）
-- [ ] T017 标记 tasks.md 全部 [X]；提交
+- [x] T017 标记 tasks.md 全部 [X]；提交
 
 ---
 
