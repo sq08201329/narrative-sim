@@ -47,17 +47,121 @@ class Store:
 
     def put_asset(self, asset: dict) -> str:
         _validate(asset, "asset.schema.json")
-        self._conn.execute(
-            "INSERT OR REPLACE INTO assets(asset_id, type, name, status, payload)"
-            " VALUES(?,?,?,?,?)",
-            (
-                asset["asset_id"], asset["type"], asset["name"],
-                asset.get("status", "draft"),
-                json.dumps(asset, ensure_ascii=False),
-            ),
-        )
+        payload_json = json.dumps(asset, ensure_ascii=False)
+        row = self._conn.execute(
+            "SELECT payload FROM assets WHERE asset_id=?", (asset["asset_id"],)
+        ).fetchone()
+        if row is None:
+            self._conn.execute(
+                "INSERT INTO assets(asset_id, type, name, status, payload,"
+                " current_revision) VALUES(?,?,?,?,?,0)",
+                (
+                    asset["asset_id"], asset["type"], asset["name"],
+                    asset.get("status", "draft"), payload_json,
+                ),
+            )
+            author = (asset.get("provenance") or {}).get("retriever") or "system"
+            self._insert_revision(asset["asset_id"], payload_json, None,
+                                  "调研原版", author)
+        else:
+            if self._revision_count(asset["asset_id"]) == 0:
+                # 011 前存量资产：以现内容补建 revision 0
+                self._insert_revision(asset["asset_id"], row["payload"], None,
+                                      "存量资产建档", "system")
+            if row["payload"] != payload_json:
+                new_rev = self._insert_revision(
+                    asset["asset_id"], payload_json, None, "",
+                    "system:put_asset")
+                self._conn.execute(
+                    "UPDATE assets SET payload=?, current_revision=?,"
+                    " updated_at=datetime('now') WHERE asset_id=?",
+                    (payload_json, new_rev, asset["asset_id"]),
+                )
         self._conn.commit()
         return asset["asset_id"]
+
+    # ---- 资产修订（011）----
+
+    def _revision_count(self, asset_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM asset_revisions WHERE asset_id=?",
+            (asset_id,),
+        ).fetchone()
+        return int(row["c"])
+
+    def _insert_revision(self, asset_id: str, payload: str,
+                         patch: str | None, reason: str, author: str) -> int:
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(revision) + 1, 0) AS n FROM asset_revisions"
+            " WHERE asset_id=?", (asset_id,),
+        ).fetchone()
+        rev = int(row["n"])
+        self._conn.execute(
+            "INSERT INTO asset_revisions(asset_id, revision, payload, patch,"
+            " reason, author) VALUES(?,?,?,?,?,?)",
+            (asset_id, rev, payload, patch, reason, author),
+        )
+        return rev
+
+    def put_revision(self, asset_id: str, payload: str, patch: str | None,
+                     reason: str, author: str) -> int:
+        """追加修订版并前移当前指针（payload 为新版完整快照 JSON）。"""
+        if self._conn.execute(
+            "SELECT 1 FROM assets WHERE asset_id=?", (asset_id,),
+        ).fetchone() is None:
+            raise KeyError(f"资产不存在: {asset_id}")
+        if self._revision_count(asset_id) == 0:
+            current = self.get_asset(asset_id)
+            self._insert_revision(asset_id, json.dumps(current,
+                                                       ensure_ascii=False),
+                                  None, "存量资产建档", "system")
+        rev = self._insert_revision(asset_id, payload, patch, reason, author)
+        self._conn.execute(
+            "UPDATE assets SET payload=?, current_revision=?,"
+            " updated_at=datetime('now') WHERE asset_id=?",
+            (payload, rev, asset_id),
+        )
+        self._conn.commit()
+        return rev
+
+    def get_revision(self, asset_id: str, revision: int) -> dict:
+        row = self._conn.execute(
+            "SELECT * FROM asset_revisions WHERE asset_id=? AND revision=?",
+            (asset_id, revision),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"修订版不存在: {asset_id}@r{revision}")
+        return dict(row)
+
+    def list_revisions(self, asset_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM asset_revisions WHERE asset_id=? ORDER BY revision",
+            (asset_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_asset_at_revision(self, asset_id: str, revision: int) -> dict:
+        return json.loads(self.get_revision(asset_id, revision)["payload"])
+
+    def set_current_revision(self, asset_id: str, revision: int) -> None:
+        """指针回指并回填该版快照（rollback 原语，历史不删）。"""
+        snap = self.get_revision(asset_id, revision)["payload"]
+        cur = self._conn.execute(
+            "UPDATE assets SET payload=?, current_revision=?,"
+            " updated_at=datetime('now') WHERE asset_id=?",
+            (snap, revision, asset_id),
+        )
+        if cur.rowcount == 0:
+            raise KeyError(f"资产不存在: {asset_id}")
+        self._conn.commit()
+
+    def current_revision(self, asset_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT current_revision FROM assets WHERE asset_id=?", (asset_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"资产不存在: {asset_id}")
+        return int(row["current_revision"])
 
     def get_asset(self, asset_id: str) -> dict:
         row = self._conn.execute(
