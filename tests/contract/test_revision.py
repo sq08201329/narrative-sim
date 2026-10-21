@@ -113,3 +113,107 @@ def test_old_db_migration(tmp_path):
         assert s.current_revision("char_old") == 1
     finally:
         s.close()
+
+
+# ---------- T006：revise/rollback 业务 ----------
+
+def _revise(store, aid, patch, **kw):
+    from orchestrator.revision import revise
+    return revise(store, aid, patch, **kw)
+
+
+def test_revise_merge_patch_and_versions(store):
+    """merge patch 深合并 + 升版 + 历史齐全。"""
+    r = _revise(store, "char_a",
+                {"persona_spec": {"personality": "急躁"}},
+                reason="创作调整", author="writer-agent")
+    assert r["revision"] == 1
+    # 深合并：其他字段保留，目标字段替换
+    asset = store.get_asset("char_a")
+    assert asset["persona_spec"]["personality"] == "急躁"
+    assert asset["persona_spec"]["secret"] == "甲的秘密"
+    # None 删键
+    _revise(store, "char_a", {"persona_spec": {"speech_style": None}},
+            reason="删口吻")
+    asset = store.get_asset("char_a")
+    assert "speech_style" not in asset["persona_spec"]
+    revs = store.list_revisions("char_a")
+    assert [x["revision"] for x in revs] == [0, 1, 2]
+    assert revs[1]["reason"] == "创作调整" and revs[1]["author"] == "writer-agent"
+    assert revs[1]["patch"]  # patch 留痕
+
+
+def test_revise_optimistic_lock(store):
+    from orchestrator.revision import RevisionConflict
+    with pytest.raises(RevisionConflict):
+        _revise(store, "char_a", {"name": "乙"}, reason="x",
+                base_revision=5)
+
+
+def test_revise_bad_patch(store):
+    from orchestrator.revision import RevisionError
+    with pytest.raises(RevisionError, match="BadPatch"):
+        _revise(store, "char_a", {}, reason="空")
+    with pytest.raises(KeyError):
+        _revise(store, "ghost", {"name": "x"}, reason="x")
+
+
+def test_revise_impacted_runs_warning(store):
+    """修订被世界 pin 引用的资产 → 响应带 impacted 与 warning。"""
+    store.put_world_config("w1", json.dumps({
+        "character_ids": ["char_a"], "location_id": "scene_hall",
+        "revisions": {"char_a": 0, "scene_hall": 0}}))
+    store.create_run("r1", "w1")
+    r = _revise(store, "char_a", {"name": "甲某"}, reason="改名")
+    assert r["impacted"] and r["impacted"][0]["world_id"] == "w1"
+    assert r["impacted"][0]["pinned_revision"] == 0
+    assert "r1" in r["impacted"][0]["run_ids"]
+    assert r["warning"]
+
+
+def test_rollback_restores_and_marks_stale(store):
+    _revise(store, "char_a", {"name": "甲某"}, reason="改名")
+    _revise(store, "char_a", {"name": "甲某某"}, reason="再改")
+    store.put_world_config("w1", json.dumps({
+        "character_ids": ["char_a"], "location_id": "scene_hall",
+        "revisions": {"char_a": 2, "scene_hall": 0}}))
+    from orchestrator.revision import rollback
+    r = rollback(store, "char_a", 0)
+    assert r["current_revision"] == 0
+    assert store.get_asset("char_a")["name"] == "甲"  # 回填 rev0 快照
+    assert "w1" in r["stale_worlds"]  # w1 冻结的是 r2，高于回滚目标
+    assert len(store.list_revisions("char_a")) == 3  # 历史不删
+
+
+def test_rollback_not_found(store):
+    from orchestrator.revision import RevisionNotFound
+    with pytest.raises(RevisionNotFound):
+        from orchestrator.revision import rollback
+        rollback(store, "char_a", 99)
+
+
+def test_pollution_guard_three_frozen_faces(store):
+    """FR-009：修订/回滚后原料表、事件表、他世界 config 逐字节不变。"""
+    store.put_world_config("w1", json.dumps({
+        "character_ids": ["char_a"], "location_id": "scene_hall",
+        "revisions": {"char_a": 0, "scene_hall": 0}}))
+    store.create_run("r1", "w1")
+    store.put_event({
+        "event_id": "e0001", "run_id": "r1", "tick": 0, "seq": 0,
+        "type": "scene_change", "characters": ["char_a"],
+        "location": "scene_hall", "content": "开场", "emotion": "",
+        "cause_refs": [],
+        "shot_hint": {"camera": "wide", "duration_s": 3.0},
+        "created_at": "2026-10-21T00:00:00+00:00",
+    })
+    store.put_material("char_a", "史料", "test", "正文")
+    before = (store.get_materials("char_a"), store.export_events("r1"),
+              store.get_world_config("w1"))
+
+    _revise(store, "char_a", {"name": "甲某"}, reason="改")
+    from orchestrator.revision import rollback
+    rollback(store, "char_a", 0)
+
+    after = (store.get_materials("char_a"), store.export_events("r1"),
+             store.get_world_config("w1"))
+    assert before == after

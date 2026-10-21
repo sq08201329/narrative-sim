@@ -255,4 +255,48 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    # ---- 011 US2：修订与回滚 ----
+
+    @mcp.tool()
+    def revise_asset(asset_id: str, patch: dict, reason: str,
+                     author: str = "creation-agent",
+                     base_revision: int | None = None) -> dict:
+        """修订资产（merge patch 深合并，值 None 删键）存为新版本。
+        base_revision 乐观锁：与当前版不符返回 RevisionConflict。
+        返回 {asset_id, revision, impacted, warning}——impacted 列出引用过
+        旧版的世界/run（修订不改历史，重拍或新建世界才用新版）。"""
+        from .revision import revise
+        store = _store()
+        try:
+            try:
+                return revise(store, asset_id, patch, reason, author,
+                              base_revision)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def rollback_asset(asset_id: str, to_revision: int) -> dict:
+        """回滚资产到指定修订版（历史保留，仅移动当前指针）。
+        返回 {asset_id, current_revision, stale_worlds}——stale_worlds 为
+        冻结了更高版号的世界（数据不变，仅标记）。"""
+        from .revision import rollback
+        store = _store()
+        try:
+            try:
+                return rollback(store, asset_id, to_revision)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
     return mcp

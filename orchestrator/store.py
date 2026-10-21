@@ -163,6 +163,27 @@ class Store:
             raise KeyError(f"资产不存在: {asset_id}")
         return int(row["current_revision"])
 
+    def list_world_configs(self) -> list[dict]:
+        """全部世界的 {world_id, config(已解析)}（修订 impacted 反查用）。"""
+        rows = self._conn.execute(
+            "SELECT world_id, config FROM worlds"
+        ).fetchall()
+        out = []
+        for r in rows:
+            try:
+                cfg = json.loads(r["config"]) if r["config"] else {}
+            except ValueError:
+                cfg = {}
+            out.append({"world_id": r["world_id"], "config": cfg})
+        return out
+
+    def list_runs(self, world_id: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT run_id FROM runs WHERE world_id=? ORDER BY started_at",
+            (world_id,),
+        ).fetchall()
+        return [r["run_id"] for r in rows]
+
     def get_asset(self, asset_id: str) -> dict:
         row = self._conn.execute(
             "SELECT payload FROM assets WHERE asset_id=?", (asset_id,)

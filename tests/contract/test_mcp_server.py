@@ -35,7 +35,9 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   # 011 US1 读接口
                   "list_assets", "get_asset", "get_materials",
                   "search_materials", "get_events", "get_world_state",
-                  "list_dm_calls"}
+                  "list_dm_calls",
+                  # 011 US2 修订
+                  "revise_asset", "rollback_asset"}
 
 
 @pytest.fixture()
@@ -304,3 +306,39 @@ def test_read_tools_empty_semantics(mcp):
                                "location_id": "scene_x"})
     r = call(mcp, "get_world_state", {"world_id": "w_empty"})
     assert r.data == {"tick": None, "state": None}
+
+
+# ---------- 011 US2：修订与回滚 ----------
+
+def test_revise_and_rollback_via_mcp(mcp):
+    r = call(mcp, "revise_asset", {
+        "asset_id": "char_a",
+        "patch": {"persona_spec": {"personality": "急躁"}},
+        "reason": "创作调整", "author": "writer-agent"})
+    assert r.data["revision"] == 1
+    assert r.data["impacted"] == []  # 无世界引用
+    assert r.data["warning"] is None
+
+    r = call(mcp, "get_asset", {"asset_id": "char_a"})
+    assert r.data["persona_spec"]["personality"] == "急躁"
+    assert r.data["current_revision"] == 1
+
+    r = call(mcp, "rollback_asset", {"asset_id": "char_a", "to_revision": 0})
+    assert r.data["current_revision"] == 0
+    r = call(mcp, "get_asset", {"asset_id": "char_a"})
+    assert r.data["persona_spec"]["personality"] == "沉稳"
+
+
+def test_revise_errors_via_mcp(mcp):
+    with pytest.raises(ToolError, match="AssetNotFound"):
+        call(mcp, "revise_asset", {"asset_id": "ghost",
+                                   "patch": {"name": "x"}, "reason": "x"})
+    with pytest.raises(ToolError, match="BadPatch"):
+        call(mcp, "revise_asset", {"asset_id": "char_a", "patch": {},
+                                   "reason": "空"})
+    with pytest.raises(ToolError, match="RevisionConflict"):
+        call(mcp, "revise_asset", {"asset_id": "char_a",
+                                   "patch": {"name": "x"}, "reason": "x",
+                                   "base_revision": 5})
+    with pytest.raises(ToolError, match="RevisionNotFound"):
+        call(mcp, "rollback_asset", {"asset_id": "char_a", "to_revision": 99})
