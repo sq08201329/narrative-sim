@@ -8,8 +8,8 @@
 
 启用真实 DM 裁决，替换当前的 Mock 占位。核心发现：WorldSeed 自带
 `LiteLLMDMProvider`（litellm + instructor 结构化输出、错误反馈重试、降级模型、
-token 统计），且 litellm/instructor 已随 worldseed 进入依赖锁——**本特性零新增
-第三方包**。工作集中在胶水层：新建 `orchestrator/dm.py` 薄工厂（环境桥接 +
+token 统计）。litellm/instructor 是 worldseed 的 `[dm]` 可选依赖，本特性启用
+`worldseed[dm]` 并放宽 openai 钉（>=2,<3.35，见 Technical Context）。工作集中在胶水层：新建 `orchestrator/dm.py` 薄工厂（环境桥接 +
 模型选择），`orchestrator/world.py` 增加显式开关（`act` 动作挂裁决配置、
 `scene.dm_knowledge` 注入调研原料要点、`max_dm_calls` 成本帽），
 `_CaptureRecorder` 捕获引擎 `dm_call` 审计记录经 store.py 落新表 `dm_calls`。
@@ -19,8 +19,10 @@ token 统计），且 litellm/instructor 已随 worldseed 进入依赖锁——*
 
 **Language/Version**: Python 3.11（项目既定）
 
-**Primary Dependencies**: worldseed（editable 本地副本，自带 litellm>=1.60 /
-instructor>=1.7）；无新增依赖
+**Primary Dependencies**: worldseed[dm]（editable 本地副本，dm extra 引入
+litellm>=1.60 / instructor>=1.7）；openai 钉放宽为 >=2,<3.35（instructor 的
+jiter<0.15 与 openai 3.35.1 的 jiter>=0.16 冲突；3.35.1 系脚手架时期顺手钉的
+最新版，无实质依据）
 
 **Storage**: SQLite，唯一入口 orchestrator/store.py（新增 `dm_calls` 表 +
 `put_dm_call` / `list_dm_calls`）
@@ -48,7 +50,7 @@ instructor>=1.7）；无新增依赖
 | II. 单一胶水层 | PASS | WorldSeed 接触面仍全部在 orchestrator/（world.py + 新 dm.py），无第二触点 |
 | III. 存储单一入口 | PASS | dm_calls 经 store.py 新方法落库；init_db.py 建表 |
 | IV. 适配器隔离与 Mock 基线 | PASS | Mock 仍为默认；真实裁决 opt-in；离线测试不经 LiteLLMDMProvider |
-| V. UV 统一依赖 | PASS | 零新增包（litellm/instructor 随 worldseed editable 已在 lock） |
+| V. UV 统一依赖 | PASS | 经 uv 启用 worldseed[dm] extra（litellm/instructor），锁文件同步更新 |
 | VI. 密钥与成本边界 | PASS | 沿用 DEEPSEEK_*→OPENAI_* 桥接（002 模式）；max_dm_calls 硬帽；逐次审计 token |
 | VII. 一特性一分支 | PASS | 当前分支 010-dm-adjudicator |
 

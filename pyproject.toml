@@ -7,10 +7,10 @@ dependencies = [
     "gptr-deepseek-retriever",
     "jsonschema>=4.26.0",
     "mcp>=2.3.0",
-    "openai>=3.35.1",
+    "openai>=2,<3.35",
     "python-dotenv>=1.2.4",
     "tinytroupe",
-    "worldseed",
+    "worldseed[dm]",
 ]
 
 [dependency-groups]
