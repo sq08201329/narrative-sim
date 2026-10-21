@@ -394,8 +394,38 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
-    # ---- 幕间记忆（012）----
+    # ---- 参考图生成记录（013）----
 
+    def put_image_generation(self, asset_id: str, prompt: str, n: int,
+                             aspect_ratio: str, paths: list[str],
+                             sha256: list[str], provider: str,
+                             asset_revision: int) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO image_generations(asset_id, prompt, n, aspect_ratio,"
+            " paths, sha256, provider, asset_revision)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (asset_id, prompt, n, aspect_ratio,
+             json.dumps(paths, ensure_ascii=False),
+             json.dumps(sha256, ensure_ascii=False), provider,
+             asset_revision),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def list_image_generations(self, asset_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM image_generations WHERE asset_id=? ORDER BY id",
+            (asset_id,),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["paths"] = json.loads(d["paths"])
+            d["sha256"] = json.loads(d["sha256"])
+            out.append(d)
+        return out
+
+    # ---- 幕间记忆（012）----
     def put_memory(self, run_id: str, asset_id: str, summary: str,
                    event_refs: list[str], channel: str,
                    tokens_in: int = 0, tokens_out: int = 0,

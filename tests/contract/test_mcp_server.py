@@ -46,7 +46,9 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   "research_brief",
                   # 012 幕间记忆
                   "generate_interlude_memory", "get_interlude_memory",
-                  "revise_interlude_memory"}
+                  "revise_interlude_memory",
+                  # 013 参考图
+                  "generate_reference_image"}
 
 
 @pytest.fixture()
@@ -648,3 +650,28 @@ def test_revise_interlude_memory_via_mcp(mcp):
     with pytest.raises(ToolError, match="RunNotFound"):
         call(mcp, "revise_interlude_memory",
              {"run_id": "ghost", "asset_id": "char_a", "summary": "x"})
+
+
+# ---------- 013：参考图（MCP 面，mock provider 零外部调用） ----------
+
+def test_generate_reference_image_via_mcp(mcp, monkeypatch, tmp_path):
+    import orchestrator.images as images_mod
+
+    class FakeProvider:
+        name = "mock/image"
+
+        def generate(self, prompt, n, aspect_ratio):
+            return [b"\x89PNG\r\n\x1a\n" + b"\x00" * 8]
+
+    monkeypatch.setattr(images_mod, "MinimaxImageProvider",
+                        lambda *a, **kw: FakeProvider())
+    monkeypatch.chdir(tmp_path)  # images/ 落临时目录
+    r = call(mcp, "generate_reference_image", {"asset_id": "char_a"})
+    assert r.data["paths"][0].startswith("images/char_a/")
+    assert r.data["revision"] == 1
+    # 资产字段可读回
+    r = call(mcp, "get_asset", {"asset_id": "char_a"})
+    assert r.data["reference_images"]
+
+    with pytest.raises(ToolError, match="AssetNotFound"):
+        call(mcp, "generate_reference_image", {"asset_id": "ghost"})

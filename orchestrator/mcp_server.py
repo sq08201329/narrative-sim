@@ -331,15 +331,19 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def export_handoff(world_id: str, out_dir: str = "handoff",
                        run_id: str | None = None,
-                       overwrite: bool = False) -> dict:
+                       overwrite: bool = False,
+                       include_images: bool = False) -> dict:
         """导出自描述移交目录（manifest + assets + events + world 快照 +
         dm_calls + materials + sources），供创作 agent team 消费。
-        目录已存在且 overwrite=False 时拒绝（HandoffExists）。"""
+        目录已存在且 overwrite=False 时拒绝（HandoffExists）。
+        本系统自产的参考图默认不带（内部草稿；创作部门以 visual_prompt
+        为准用专业通道重做），include_images=True 才复制。"""
         from .handoff import export_handoff as _export
         store = _store()
         try:
             try:
-                return _export(store, world_id, out_dir, run_id, overwrite)
+                return _export(store, world_id, out_dir, run_id, overwrite,
+                               include_images)
             except KeyError:
                 raise ToolError(f"WorldNotFound: world {world_id} 不存在")
         except ToolError:
@@ -480,6 +484,33 @@ def build_server() -> FastMCP:
                                    reason=reason)
             return {"asset_id": asset_id, "revision": rev,
                     "summary": summary}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 013：参考图生成 ----
+
+    @mcp.tool()
+    def generate_reference_image(asset_id: str, n: int = 1,
+                                 aspect_ratio: str | None = None,
+                                 prompt_override: str | None = None) -> dict:
+        """为资产生成参考图（MiniMax image-01，每张一次计费）。
+        默认提示词为资产 visual_prompt，宽高比按类型（角色/道具竖版 2:3，
+        场景/时代横版 16:9）。返回 {paths, revision, sha256, ...}。"""
+        from .images import ImageGenError, generate_reference_images
+        store = _store()
+        try:
+            try:
+                return generate_reference_images(
+                    store, asset_id, n=n, aspect_ratio=aspect_ratio,
+                    prompt_override=prompt_override)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+            except ImageGenError as e:
+                raise ToolError(str(e)) from e
         except ToolError:
             raise
         except Exception as e:

@@ -87,7 +87,7 @@ def test_handoff_layout_and_manifest(store, tmp_path):
     assert manifest["world_id"] == "w1" and manifest["run_id"] == "r1"
     assert manifest["revision_pins"] == {"char_a": 0, "scene_hall": 0}
     assert manifest["counts"] == {"assets": 2, "events": 1, "dm_calls": 1,
-                                  "materials": 1}
+                                  "materials": 1, "images": 0}
     assert "secret" in manifest["secrecy"]
     # sha256 自描述：manifest 每项与文件实算一致
     for item in manifest["items"]:
@@ -142,3 +142,44 @@ def test_handoff_world_not_found(store, tmp_path):
     from orchestrator.handoff import export_handoff
     with pytest.raises(KeyError, match="w_ghost"):
         export_handoff(store, "w_ghost", str(tmp_path / "handoff"))
+
+
+# ---------- 013 US3：移交包带图 ----------
+
+def test_handoff_with_images(store, tmp_path):
+    """显式 include_images=True 才带图；默认不带（自产图为内部草稿）。"""
+    _full_world(store)
+    # 给 char_a 造一张已登记参考图（直接放文件 + 更新资产，走 put_asset）
+    img_dir = tmp_path / "img_src"
+    img_dir.mkdir()
+    fake = img_dir / "ref.png"
+    fake.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
+    asset = store.get_asset("char_a")
+    asset["reference_images"] = [str(fake)]  # 绝对/相对路径均应支持
+    store.put_asset(asset)
+
+    from orchestrator.handoff import export_handoff
+    # 默认：不带图
+    out = export_handoff(store, "w1", str(tmp_path / "h_default"),
+                         run_id="r1")
+    assert out["counts"]["images"] == 0
+    assert not (tmp_path / "h_default" / "w1" / "images").exists()
+    # 显式带图
+    out = export_handoff(store, "w1", str(tmp_path / "handoff"),
+                         run_id="r1", include_images=True)
+    d = tmp_path / "handoff" / "w1"
+    copied = d / "images" / "char_a" / "ref.png"
+    assert copied.exists() and copied.read_bytes() == fake.read_bytes()
+    assert out["counts"]["images"] == 1
+    manifest = json.loads((d / "manifest.json").read_text("utf-8"))
+    img_items = [i for i in manifest["items"] if i["kind"] == "image"]
+    assert len(img_items) == 1
+    assert _sha(copied) == img_items[0]["sha256"]
+
+
+def test_handoff_without_images(store, tmp_path):
+    """无图世界：images 计数为 0，不报错。"""
+    _full_world(store)
+    from orchestrator.handoff import export_handoff
+    out = export_handoff(store, "w1", str(tmp_path / "handoff"), run_id="r1")
+    assert out["counts"]["images"] == 0

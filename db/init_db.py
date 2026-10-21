@@ -104,6 +104,20 @@ CREATE TABLE IF NOT EXISTS interlude_memories (
     UNIQUE(run_id, asset_id, revision)
 );
 CREATE INDEX IF NOT EXISTS idx_interlude_run ON interlude_memories(run_id, asset_id);
+
+CREATE TABLE IF NOT EXISTS image_generations (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id       TEXT NOT NULL REFERENCES assets(asset_id),
+    prompt         TEXT NOT NULL,
+    n              INTEGER NOT NULL,
+    aspect_ratio   TEXT NOT NULL,
+    paths          TEXT NOT NULL,
+    sha256         TEXT NOT NULL,
+    provider       TEXT NOT NULL,
+    asset_revision INTEGER NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_image_gen_asset ON image_generations(asset_id);
 """
 
 

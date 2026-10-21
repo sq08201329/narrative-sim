@@ -24,3 +24,5 @@ tinytroupe.*.log
 .DS_Store
 Thumbs.db
 previz/previz_data.js
+images/
+handoff/
