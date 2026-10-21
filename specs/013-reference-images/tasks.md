@@ -110,7 +110,7 @@ contracts/images.md ✅、quickstart.md ✅
   （契约 §3，错误词汇 AssetNotFound/BadPrompt/ImageGenError）+
   `test_mcp_server.py` 契约用例 + EXPECTED_TOOLS 更新
 - [x] T013 全量回归 `uv run pytest -m "not real" -q` 全绿
-- [ ] T014 真机验收（quickstart）：yanyu.db 察子生成 1 张竖版（2:3），
+- [x] T014 真机验收（quickstart）：yanyu.db 察子生成 1 张竖版（2:3），
   图片可打开且语义相符（人工核对）；错误密钥故障验证（零残留）
 - [x] T015 标记 tasks.md 全部 [X]；提交
 
