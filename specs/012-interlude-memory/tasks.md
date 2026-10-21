@@ -138,3 +138,12 @@ tokens=0（quickstart 离线 3/5）
 MVP = Phase 1-3（US1）：过滤 + template 通道 + 双路注入即可让多幕连续性
 离线跑通。US2 补齐审计与 MCP 面，US3 加 llm 质量通道与三工具接线，
 Polish 真机两幕连跑验收。
+
+---
+
+## Phase 7: Convergence
+
+- [ ] T018 [US2] 补创作队修订记忆入口：`orchestrator/mcp_server.py` 新增
+  revise_interlude_memory(run_id, asset_id, summary, reason) 薄封装（经
+  store.put_memory 升版，channel="edited"），下一幕注入即取修订版；
+  离线测试覆盖修订→读取→注入链路 per US2/AC3 (missing)
