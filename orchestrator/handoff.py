@@ -99,6 +99,25 @@ def export_handoff(store: Store, world_id: str, out_dir: str,
         _write(target / "materials" / f"{aid}.md",
                f"# {aid} 调研原料\n\n{md}\n", items, target, "materials")
 
+    # 参考图（013）：reference_images 非空的资产带图
+    image_count = 0
+    for aid in asset_ids:
+        asset = store.get_asset(aid)
+        for ref in asset.get("reference_images") or []:
+            src = Path(ref)
+            if not src.exists():
+                continue
+            dest = target / "images" / aid / src.name
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src, dest)
+            items.append({
+                "path": str(dest.relative_to(target)),
+                "kind": "image",
+                "sha256": hashlib.sha256(dest.read_bytes()).hexdigest(),
+                "bytes": dest.stat().st_size,
+            })
+            image_count += 1
+
     # 溯源汇总
     lines = ["# 溯源汇总\n"]
     for aid in asset_ids:
@@ -115,7 +134,8 @@ def export_handoff(store: Store, world_id: str, out_dir: str,
            items, target, "sources")
 
     counts = {"assets": len(asset_ids), "events": len(events),
-              "dm_calls": len(dm_calls), "materials": material_count}
+              "dm_calls": len(dm_calls), "materials": material_count,
+              "images": image_count}
     manifest = {
         "format": FORMAT,
         "world_id": world_id,

@@ -487,4 +487,31 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    # ---- 013：参考图生成 ----
+
+    @mcp.tool()
+    def generate_reference_image(asset_id: str, n: int = 1,
+                                 aspect_ratio: str | None = None,
+                                 prompt_override: str | None = None) -> dict:
+        """为资产生成参考图（MiniMax image-01，每张一次计费）。
+        默认提示词为资产 visual_prompt，宽高比按类型（角色/道具竖版 2:3，
+        场景/时代横版 16:9）。返回 {paths, revision, sha256, ...}。"""
+        from .images import ImageGenError, generate_reference_images
+        store = _store()
+        try:
+            try:
+                return generate_reference_images(
+                    store, asset_id, n=n, aspect_ratio=aspect_ratio,
+                    prompt_override=prompt_override)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+            except ImageGenError as e:
+                raise ToolError(str(e)) from e
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
     return mcp
