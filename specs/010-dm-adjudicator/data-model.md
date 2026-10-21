@@ -35,7 +35,7 @@
 | max_effects | int | 5 | 单次裁决效果上限 |
 | knowledge_chars | int | 2000 | 史料注入字符预算 |
 | max_calls | int | 50 | scene.max_dm_calls 成本帽 |
-| model | str | env MODEL_FAST 或 "deepseek-flash" | 裁决模型 |
+| model | str | env DM_MODEL 或 "deepseek-chat"（非思考模型，见 quickstart 模型注意） | 裁决模型 |
 | timeout_s | float | 30.0 | 单次裁决超时 |
 | max_retries | int | 2 | instructor 校验重试 |
 

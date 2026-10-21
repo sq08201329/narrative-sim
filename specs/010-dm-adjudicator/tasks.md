@@ -123,13 +123,13 @@ dm_calls 全 failed=1；全量离线套件零外部调用（SC-004/005）
 
 - [x] T013 全量回归 `uv run pytest -m "not real" -q` 全绿；`uv lock --check`
   无依赖变更
-- [ ] T014 真机验收（quickstart）：`world_talk.db` 沈刻对手戏资产
+- [x] T014 真机验收（quickstart）：`world_talk.db` 沈刻对手戏资产
   `--dm --dm-max-calls 20` 跑 6 tick——dm_calls 覆盖率 100%、至少一行
   effects 非空且快照可见变更、叙事不替他人演戏；故障注入（错误
   DEEPSEEK_BASE_URL）run 完成率 100%（SC-001/002/004）
-- [ ] T015 真机验收（可选，yanyu.db）：史料注入后裁决叙事与原料一致，
+- [x] T015 真机验收（可选，yanyu.db）：史料注入后裁决叙事与原料一致，
   人工核对（SC-002 后半）
-- [ ] T016 标记 tasks.md 全部 [X]；提交
+- [x] T016 标记 tasks.md 全部 [X]；提交
 
 ---
 

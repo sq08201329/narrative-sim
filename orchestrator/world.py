@@ -45,7 +45,9 @@ class DMOptions:
 
     def __post_init__(self):
         if not self.model:
-            self.model = os.environ.get("MODEL_FAST", "deepseek-flash")
+            # 默认非思考模型：deepseek-flash 为思考模型，不支持裁决所需的
+            # tool_choice（真机实测 010）
+            self.model = os.environ.get("DM_MODEL", "deepseek-chat")
 
 
 # 机械效果动作集（无 DM 段；say/whisper/act 口径照 teahouse.yaml 模板）

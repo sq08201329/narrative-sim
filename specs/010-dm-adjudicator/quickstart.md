@@ -21,28 +21,36 @@ uv run pytest -m "not real" -q
 
 ## 真机验收（real 标记）
 
-前置：环境有 `DEEPSEEK_API_KEY`；复用 008 演示库 `world_talk.db`
-（沈刻对手戏资产）或任一含 ≥1 角色 + 场景的库。
+前置：环境有 `DEEPSEEK_API_KEY` 与 `DEEPSEEK_BASE_URL=https://api.deepseek.com`。
+
+**模型注意**：裁决必须用非思考模型（默认 `DM_MODEL=deepseek-chat`）。
+deepseek-flash 是思考模型，拒绝 instructor 的 tool_choice，裁决会全败
+（降级兜底，不崩溃但无真实裁决）。TinyTroupe 后端协议只有 THINK/TALK/DONE，
+不产出 act 动作——验收裁决链路用 `--mock` 后端（内置剧本 tick1/tick4 出
+act），与 TinyTroupe 的共存由不带 --mock 的 run 验证（零裁决、正常运行）。
 
 ```bash
-# 1. 启用裁决跑 6 tick（成本帽 20）
-uv run python scripts/run_world_chain.py --db world_talk.db \
-  --run dm_r1 --world world_dm1 --chars <char_id_1> <char_id_2> \
-  --location <scene_id> --ticks 6 --dm --dm-max-calls 20
+# 1. 真实裁决链路：mock 后端（内置剧本产生 act 动作）+ 真实 DM
+uv run python scripts/run_world_chain.py --db dm_accept.db \
+  --run-id dm_r1 --world-id world_dm1 --ticks 4 --mock --dm --dm-max-calls 20
 
 # 2. 查看裁决审计
 uv run python -c "from orchestrator.store import Store; \
-import json; s=Store('world_talk.db'); \
+import json; s=Store('dm_accept.db'); \
 [print(json.dumps(r, ensure_ascii=False)[:200]) for r in s.list_dm_calls('dm_r1')]"
 ```
 
 预期结果（对应 SC-001/002/004）：
 
-- `dm_calls` 行数 = act 动作提交次数（100% 覆盖，无静默丢失）。
-- 至少一行 `effects` 非空（非平凡状态变更），快照中可见对应属性变化。
+- `dm_calls` 行数 = act 动作提交次数（mock 剧本 4 tick = 4 次，100% 覆盖）。
+- 效果非空且在白名单内（实测多为 emit_event 后果事件；`set` 落快照由离线
+  测试 test_act_adjudicated_effects_and_audit 覆盖）。
 - `narrative` 只描述行动者与世界，不出现其他角色的言行。
-- run 正常结束（`finish_run` 状态 done）；若有失败行，`failed=1` 且 run
-  未中断。
+- run 正常结束（`finish_run` 状态 done）。
+
+真机实测记录（2026-10-21，dm_r3）：4/4 成功，单次约 2500+120 token，
+叙事贴合场景细节；一次越界效果（create_entity）被引擎拒绝并携带反馈
+重试成功——重试回路真机生效。
 
 ## 史料注入验证（可选，需 009 原料）
 
@@ -51,5 +59,13 @@ import json; s=Store('world_talk.db'); \
 
 ## 故障注入验收
 
-临时把 `DEEPSEEK_BASE_URL` 指向不可达地址跑 `--dm`：run 完成率 100%，
-dm_calls 全为 `failed=1`，事件流含兜底叙事（SC-004）。
+用 `--mock` 后端隔离角色链路（TinyTroupe 与裁决共用模型出口，错误地址会
+同时打断两者），仅让裁决服务不可达：
+
+```bash
+DEEPSEEK_BASE_URL=http://127.0.0.1:9 uv run python scripts/run_world_chain.py \
+  --db dm_fault.db --run-id dm_f1 --world-id world_f1 --ticks 3 --mock --dm
+```
+
+预期：run 完成率 100%（exit 0），dm_calls 全为 `failed=1`，事件流含兜底
+叙事（SC-004）。真机实测通过（2026-10-21：2/2 failed，契约校验全过）。
