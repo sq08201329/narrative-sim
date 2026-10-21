@@ -213,3 +213,25 @@ class Store:
         for ev in events:
             _validate(ev, "event.schema.json")
         return events
+
+    # ---- 裁决审计（010）----
+
+    def put_dm_call(self, run_id: str, tick: int, action: str, agent_id: str,
+                    params: str, hint: str, narrative: str, effects: str,
+                    tokens_in: int, tokens_out: int, elapsed_s: float,
+                    failed: bool) -> int:
+        cur = self._conn.execute(
+            "INSERT INTO dm_calls(run_id, tick, action, agent_id, params, hint,"
+            " narrative, effects, tokens_in, tokens_out, elapsed_s, failed)"
+            " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (run_id, tick, action, agent_id, params, hint, narrative, effects,
+             tokens_in, tokens_out, elapsed_s, int(failed)),
+        )
+        self._conn.commit()
+        return int(cur.lastrowid)
+
+    def list_dm_calls(self, run_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT * FROM dm_calls WHERE run_id=? ORDER BY id", (run_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
