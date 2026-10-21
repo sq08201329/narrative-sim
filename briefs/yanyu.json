@@ -1,0 +1,37 @@
+{
+ "theme": "南宋末年临安城里的情报战",
+ "generated_at": "2026-10-20T14:14:26.125123+00:00",
+ "items": [
+  {
+   "category": "world",
+   "query": "南宋临安城皇城与街巷布局复原图 御街 城门 水系",
+   "asset_type": "scene",
+   "link": null
+  },
+  {
+   "category": "world",
+   "query": "宋代情报传递道具 蜡丸 密信 隐写术 符牌 驿传",
+   "asset_type": "prop",
+   "link": null
+  },
+  {
+   "category": "character",
+   "query": "南宋末年临安情报人物 间谍 台谏官员 皇城司吏员 传记",
+   "asset_type": "character",
+   "link": null
+  },
+  {
+   "category": "lore",
+   "query": "南宋皇城司 情报侦察 制度 职能 临安",
+   "asset_type": null,
+   "link": null
+  },
+  {
+   "category": "lore",
+   "query": "南宋末年元军渗透临安 谍报活动 真实事件 德祐",
+   "asset_type": null,
+   "link": null
+  }
+ ],
+ "truncated": false
+}

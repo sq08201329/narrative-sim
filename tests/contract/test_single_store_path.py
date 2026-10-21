@@ -68,3 +68,29 @@ def test_list_assets_filters_by_type(tmp_path):
         assert store.list_assets("epoch") == []
     finally:
         store.close()
+
+
+# ---- 009 T003：原料表读写 ----
+
+def test_material_roundtrip_and_append(tmp_path):
+    from db.init_db import init as init_db
+    from orchestrator.store import Store
+
+    db = tmp_path / "m.db"
+    init_db(db)
+    store = Store(db)
+    try:
+        id1 = store.put_material("char_a", "宋代女医", "gptr-mcp(deepseek-search)",
+                                 "原料甲" * 100)
+        id2 = store.put_material("char_a", "宋代女医 服饰", "gptr-mcp(deepseek-search)",
+                                 "原料乙")
+        assert id2 > id1
+        ms = store.get_materials("char_a")
+        assert len(ms) == 2 and ms[0]["context"].startswith("原料甲")
+        assert ms[1]["query"] == "宋代女医 服饰"
+        assert store.get_materials("char_ghost") == []
+        latest = store.get_material_by_query("宋代女医")
+        assert latest["asset_id"] == "char_a"
+        assert store.get_material_by_query("不存在") is None
+    finally:
+        store.close()

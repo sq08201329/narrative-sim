@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS events (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_run ON events(run_id, tick, seq);
+
+CREATE TABLE IF NOT EXISTS research_materials (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id   TEXT NOT NULL,
+    query      TEXT NOT NULL,
+    retriever  TEXT NOT NULL,
+    context    TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_materials_asset ON research_materials(asset_id);
+CREATE INDEX IF NOT EXISTS idx_materials_query ON research_materials(query);
 """
 
 

@@ -27,6 +27,14 @@ class ResearchError(RuntimeError):
     """调研管线失败（配置缺失 / 服务不可达 / 抽取失败 / 契约拒绝）。"""
 
 
+def _retriever_label() -> str:
+    return os.environ.get("GPTR_MCP_RETRIEVER_LABEL", "gptr-mcp(deepseek-search)")
+
+
+def _material_max_chars() -> int:
+    return int(os.environ.get("RESEARCH_MATERIAL_MAX_CHARS", "8000"))
+
+
 # ---------- MCP 客户端 ----------
 
 def _mcp_url() -> str:
@@ -108,8 +116,7 @@ def _compose_asset(draft: dict, asset_type: str, source_urls: list[str], now) ->
         "name": name,
         "provenance": {
             "researched_at": ts,
-            "retriever": os.environ.get("GPTR_MCP_RETRIEVER_LABEL",
-                                        "gptr-mcp(deepseek-search)"),
+            "retriever": _retriever_label(),
             "model": model_name,
             "confidence": min(0.5 + 0.1 * len(source_urls), 0.9),
         },
@@ -204,9 +211,49 @@ def research_asset(query: str, asset_type: str, store, *,
             continue
         duplicate = _find_duplicate(asset, store, embed)
         if duplicate is not None:
+            _persist_material(store, duplicate, query, context)
             return duplicate
         try:
-            return store.put_asset(asset)
+            asset_id = store.put_asset(asset)
+            _persist_material(store, asset_id, query, context)
+            return asset_id
         except Exception as exc:  # 契约校验拒绝（缺字段类漂移）：重试一次抽取
             last_err = exc
     raise ResearchError(f"结构化抽取失败（重试 {EXTRACTION_RETRIES} 次）: {last_err}")
+
+
+def _persist_material(store, asset_id: str, query: str, context: str) -> None:
+    """原料入库（009 FR-005）：成功与去重命中均追加；store 无此方法时跳过
+    （004 测试替身无 put_material）。"""
+    put = getattr(store, "put_material", None)
+    if put is None or not context.strip():
+        return
+    put(asset_id, query, _retriever_label(), context[:_material_max_chars()])
+
+
+def research_material(query: str, store, *,
+                      link_asset_id: str | None = None,
+                      call_tool=None) -> int:
+    """素材类调研（009 FR-004）：取料直接入原料表，不做资产化。
+    返回原料行 id。link_asset_id 未给且无法匹配已有资产时挂 "lore:research"。"""
+    if not query or not query.strip():
+        raise ResearchError("查询词为空或仅含空白字符")
+    if call_tool is None:
+        call_tool = _default_call_tool()
+
+    try:
+        resp = call_tool("deep_research", {"query": query})
+    except ResearchError:
+        raise
+    except Exception as exc:
+        raise ResearchError(f"调研服务调用失败: {exc}") from exc
+
+    if not isinstance(resp, dict) or resp.get("status") != "success":
+        raise ResearchError(f"调研服务返回错误: {resp}")
+    context = (resp.get("context") or "").strip()
+    if not context:
+        raise ResearchError("调研结果无材料，拒绝入库")
+
+    asset_id = link_asset_id or "lore:research"
+    return store.put_material(asset_id, query, _retriever_label(),
+                              context[:_material_max_chars()])
