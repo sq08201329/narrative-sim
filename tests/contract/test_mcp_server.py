@@ -45,7 +45,8 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   # 011 FR-014 立项
                   "research_brief",
                   # 012 幕间记忆
-                  "generate_interlude_memory", "get_interlude_memory"}
+                  "generate_interlude_memory", "get_interlude_memory",
+                  "revise_interlude_memory"}
 
 
 @pytest.fixture()
@@ -613,3 +614,37 @@ def test_legacy_asset_pin_resolvable(mcp):
     r = call(mcp, "run_simulation", {"world_id": "w_leg", "run_id": "r_leg",
                                      "ticks": 1, "backend": "mock"})
     assert r.data["event_count"] == 2
+
+
+# ---------- 012 T018：修订记忆入口（converge 追加） ----------
+
+def test_revise_interlude_memory_via_mcp(mcp):
+    """US2/AC3：修订 → 读取为修订版 → 注入链路取最新版。"""
+    import os
+    from db.init_db import init as init_db
+    db = os.environ["NARRATIVE_DB"]
+    init_db(db)
+    s = Store(db)
+    s.create_run("run1", "w1")
+    s.finish_run("run1", "done")
+    s.put_memory("run1", "char_a", "原始记忆", ["e0001"], "template")
+    s.close()
+
+    r = call(mcp, "revise_interlude_memory",
+             {"run_id": "run1", "asset_id": "char_a",
+              "summary": "修订版记忆：删去街市一段", "reason": "创作调整"})
+    assert r.data["revision"] == 2
+
+    r = call(mcp, "get_interlude_memory",
+             {"run_id": "run1", "asset_id": "char_a"})
+    m = r.data["memories"][0]
+    assert m["summary"] == "修订版记忆：删去街市一段"
+    assert m["channel"] == "edited" and m["reason"] == "创作调整"
+
+    # 错误词汇
+    with pytest.raises(ToolError, match="MemoryNotFound"):
+        call(mcp, "revise_interlude_memory",
+             {"run_id": "run1", "asset_id": "char_b", "summary": "x"})
+    with pytest.raises(ToolError, match="RunNotFound"):
+        call(mcp, "revise_interlude_memory",
+             {"run_id": "ghost", "asset_id": "char_a", "summary": "x"})

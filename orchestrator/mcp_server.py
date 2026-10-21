@@ -461,4 +461,30 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    @mcp.tool()
+    def revise_interlude_memory(run_id: str, asset_id: str, summary: str,
+                                reason: str = "") -> dict:
+        """修订某角色的幕间记忆文本（升版留痕，channel=edited）；
+        下一幕注入即取修订版。记忆不存在时返回 MemoryNotFound。"""
+        store = _store()
+        try:
+            if not store.run_exists(run_id):
+                raise ToolError(f"RunNotFound: run {run_id} 不存在")
+            existing = store.get_memory(run_id, asset_id)
+            if existing is None:
+                raise ToolError(
+                    f"MemoryNotFound: {run_id}/{asset_id} 无记忆可修订"
+                    f"（先 generate_interlude_memory）")
+            rev = store.put_memory(run_id, asset_id, summary,
+                                   existing["event_refs"], "edited",
+                                   reason=reason)
+            return {"asset_id": asset_id, "revision": rev,
+                    "summary": summary}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
     return mcp

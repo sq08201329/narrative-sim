@@ -398,7 +398,8 @@ class Store:
 
     def put_memory(self, run_id: str, asset_id: str, summary: str,
                    event_refs: list[str], channel: str,
-                   tokens_in: int = 0, tokens_out: int = 0) -> int:
+                   tokens_in: int = 0, tokens_out: int = 0,
+                   reason: str = "") -> int:
         """同 (run_id, asset_id) 自动升 revision 追加，返回新版号。"""
         row = self._conn.execute(
             "SELECT COALESCE(MAX(revision) + 1, 1) AS n FROM interlude_memories"
@@ -407,11 +408,11 @@ class Store:
         rev = int(row["n"])
         self._conn.execute(
             "INSERT INTO interlude_memories(run_id, asset_id, revision,"
-            " summary, event_refs, channel, tokens_in, tokens_out)"
-            " VALUES(?,?,?,?,?,?,?,?)",
+            " summary, event_refs, channel, reason, tokens_in, tokens_out)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
             (run_id, asset_id, rev, summary,
              json.dumps(event_refs, ensure_ascii=False), channel,
-             tokens_in, tokens_out),
+             reason, tokens_in, tokens_out),
         )
         self._conn.commit()
         return rev
