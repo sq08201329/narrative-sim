@@ -69,6 +69,11 @@ reference_images 更新 + 修订留痕）；真机对演示库一个角色生成
 011 移交包在 materials/ 旁增加 images/：每个有参考图的资产带出图片文件，
 manifest 记录其哈希。
 
+**定位调整（2026-10-21 用户拍板）**：本系统自产图为**内部草稿/通道验证**
+用途（视觉通道打通），不作为创作参考图移交——移交默认不带图
+（`include_images=False`），创作部门以 visual_prompt 为准经专业通道重做。
+显式 include_images=True 时能力保留可用。
+
 **Why this priority**: 移交闭环的最后一环；依赖 US1 有图可带。
 
 **Independent Test**: 对有图资产导出移交包，images/ 含图片且 manifest 哈希

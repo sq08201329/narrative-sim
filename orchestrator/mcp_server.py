@@ -331,15 +331,19 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def export_handoff(world_id: str, out_dir: str = "handoff",
                        run_id: str | None = None,
-                       overwrite: bool = False) -> dict:
+                       overwrite: bool = False,
+                       include_images: bool = False) -> dict:
         """导出自描述移交目录（manifest + assets + events + world 快照 +
         dm_calls + materials + sources），供创作 agent team 消费。
-        目录已存在且 overwrite=False 时拒绝（HandoffExists）。"""
+        目录已存在且 overwrite=False 时拒绝（HandoffExists）。
+        本系统自产的参考图默认不带（内部草稿；创作部门以 visual_prompt
+        为准用专业通道重做），include_images=True 才复制。"""
         from .handoff import export_handoff as _export
         store = _store()
         try:
             try:
-                return _export(store, world_id, out_dir, run_id, overwrite)
+                return _export(store, world_id, out_dir, run_id, overwrite,
+                               include_images)
             except KeyError:
                 raise ToolError(f"WorldNotFound: world {world_id} 不存在")
         except ToolError:

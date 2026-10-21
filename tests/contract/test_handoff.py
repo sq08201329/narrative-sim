@@ -147,7 +147,7 @@ def test_handoff_world_not_found(store, tmp_path):
 # ---------- 013 US3：移交包带图 ----------
 
 def test_handoff_with_images(store, tmp_path):
-    """有参考图的资产：images/ 带图 + manifest 条目哈希一致 + counts 增列。"""
+    """显式 include_images=True 才带图；默认不带（自产图为内部草稿）。"""
     _full_world(store)
     # 给 char_a 造一张已登记参考图（直接放文件 + 更新资产，走 put_asset）
     img_dir = tmp_path / "img_src"
@@ -159,7 +159,14 @@ def test_handoff_with_images(store, tmp_path):
     store.put_asset(asset)
 
     from orchestrator.handoff import export_handoff
-    out = export_handoff(store, "w1", str(tmp_path / "handoff"), run_id="r1")
+    # 默认：不带图
+    out = export_handoff(store, "w1", str(tmp_path / "h_default"),
+                         run_id="r1")
+    assert out["counts"]["images"] == 0
+    assert not (tmp_path / "h_default" / "w1" / "images").exists()
+    # 显式带图
+    out = export_handoff(store, "w1", str(tmp_path / "handoff"),
+                         run_id="r1", include_images=True)
     d = tmp_path / "handoff" / "w1"
     copied = d / "images" / "char_a" / "ref.png"
     assert copied.exists() and copied.read_bytes() == fake.read_bytes()

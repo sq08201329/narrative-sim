@@ -36,8 +36,11 @@ def _write(path: Path, content: str, items: list[dict],
 
 def export_handoff(store: Store, world_id: str, out_dir: str,
                    run_id: str | None = None,
-                   overwrite: bool = False) -> dict:
-    """导出移交包。run_id 缺省取该世界最近 run；无 run 时事件/裁决为空集。"""
+                   overwrite: bool = False,
+                   include_images: bool = False) -> dict:
+    """导出移交包。run_id 缺省取该世界最近 run；无 run 时事件/裁决为空集。
+    include_images=True 才带本系统生成的参考图——默认不带：自产图为
+    内部草稿，创作部门以 visual_prompt 为准用专业通道重做（013 定位）。"""
     cfg_row = store.get_world_config(world_id)
     if cfg_row is None:
         raise KeyError(f"世界不存在: {world_id}")
@@ -99,9 +102,9 @@ def export_handoff(store: Store, world_id: str, out_dir: str,
         _write(target / "materials" / f"{aid}.md",
                f"# {aid} 调研原料\n\n{md}\n", items, target, "materials")
 
-    # 参考图（013）：reference_images 非空的资产带图
+    # 参考图（013）：默认不带（自产图为内部草稿）；显式 include_images 才复制
     image_count = 0
-    for aid in asset_ids:
+    for aid in asset_ids if include_images else []:
         asset = store.get_asset(aid)
         for ref in asset.get("reference_images") or []:
             src = Path(ref)
