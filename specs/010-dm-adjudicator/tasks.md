@@ -13,19 +13,19 @@ contracts/dm-provider.md ✅、quickstart.md ✅
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] `.env.example` 增加键位（含注释）：`DM_KNOWLEDGE_CHARS`（2000）、
+- [x] T001 [P] `.env.example` 增加键位（含注释）：`DM_KNOWLEDGE_CHARS`（2000）、
   `DM_MAX_CALLS`（50）、`DM_TIMEOUT_S`（30）
 
 ---
 
 ## Phase 2: Foundational（裁决审计表，阻塞 US1）
 
-- [ ] T002 `db/init_db.py` 增加 `dm_calls` 幂等 DDL（字段与
+- [x] T002 `db/init_db.py` 增加 `dm_calls` 幂等 DDL（字段与
   `idx_dm_calls_run` 索引见 data-model.md，与引擎 dm_call record 载荷对齐）；
   `orchestrator/store.py` 增加 `put_dm_call(run_id, tick, action, agent_id,
   params, hint, narrative, effects, tokens_in, tokens_out, elapsed_s, failed)
   -> int` / `list_dm_calls(run_id) -> list[dict]`（按 id 升序）
-- [ ] T003 审计表离线测试（真实 SQLite tmp 库，追加进
+- [x] T003 审计表离线测试（真实 SQLite tmp 库，追加进
   `tests/contract/test_dm_adjudicator.py`）：写读往返 / 同 run 多条按序 /
   失败行 failed=1 且 effects="[]" / 空 run 返回 []
 
@@ -43,7 +43,7 @@ contracts/dm-provider.md ✅、quickstart.md ✅
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T004 [US1] `tests/contract/test_dm_adjudicator.py` 主体：
+- [x] T004 [US1] `tests/contract/test_dm_adjudicator.py` 主体：
   兼容锚点（dm=None 时 build_scene_config 输出与 006 版逐键一致，无 dm/
   dm_knowledge/max_dm_calls 键）；DMOptions 注入（act.dm 存在且含 hint/
   allowed_ops/max_effects，say/whisper 无 dm；scene.max_dm_calls 生效）；
@@ -52,19 +52,19 @@ contracts/dm-provider.md ✅、quickstart.md ✅
 
 ### Implementation for User Story 1
 
-- [ ] T005 [P] [US1] 实现 `orchestrator/dm.py`：`DMConfigError` +
+- [x] T005 [P] [US1] 实现 `orchestrator/dm.py`：`DMConfigError` +
   `build_dm_provider(options)`（DEEPSEEK_*→OPENAI_* 桥接仅补缺、
   模型串 `openai/{options.model}`、构造 LiteLLMDMProvider(timeout, max_retries)，
   契约见 contracts/dm-provider.md §1）
-- [ ] T006 [US1] `orchestrator/world.py`：`DMOptions` dataclass（字段与默认
+- [x] T006 [US1] `orchestrator/world.py`：`DMOptions` dataclass（字段与默认
   见 data-model.md）；`build_scene_config(..., dm=None)` 增加 dm 分支
   （act 挂 DMConfig、scene.max_dm_calls；dm_knowledge 先留空串占位，
   US2 填充）；`run_world(..., dm=None)` dm 非 None 时
   `build_dm_provider` 并传入 WorldEngine
-- [ ] T007 [US1] `orchestrator/world.py`：`_CaptureRecorder` 增加
+- [x] T007 [US1] `orchestrator/world.py`：`_CaptureRecorder` 增加
   `record(kind, tick, **data)` 捕获 kind=="dm_call" 入缓冲；`run_world`
   结束后逐条 `store.put_dm_call`（审计字段映射见 contracts §4）
-- [ ] T008 [US1] `scripts/run_world_chain.py` 增加 `--dm` /
+- [x] T008 [US1] `scripts/run_world_chain.py` 增加 `--dm` /
   `--dm-knowledge-chars N`（2000）/ `--dm-max-calls N`（50）；
   不带 --dm 行为不变；--dm 缺密钥时退出码非零且消息指明缺哪个键
 
@@ -81,13 +81,13 @@ contracts/dm-provider.md ✅、quickstart.md ✅
 
 ### Tests for User Story 2（先写，确认失败）
 
-- [ ] T009 [US2] `tests/contract/test_dm_adjudicator.py` 追加：
+- [x] T009 [US2] `tests/contract/test_dm_adjudicator.py` 追加：
   build_dm_knowledge 多资产汇总（【query】前缀格式）/ 预算截断（整条丢弃
   尾部）/ 无原料返回 "" / 缺料资产跳过不抛；scene.dm_knowledge 端到端注入
 
 ### Implementation for User Story 2
 
-- [ ] T010 [US2] `orchestrator/dm.py` 实现
+- [x] T010 [US2] `orchestrator/dm.py` 实现
   `build_dm_knowledge(store, asset_ids, budget=2000)`（契约 §2）；
   `orchestrator/world.py` build_scene_config dm 分支接入（asset_ids =
   character_ids + location_id，预算取 options.knowledge_chars）
@@ -105,14 +105,14 @@ dm_calls 全 failed=1；全量离线套件零外部调用（SC-004/005）
 
 ### Tests for User Story 3（先写，确认失败）
 
-- [ ] T011 [US3] `tests/contract/test_dm_adjudicator.py` 追加：
+- [x] T011 [US3] `tests/contract/test_dm_adjudicator.py` 追加：
   FailingMockDMProvider（fail_count 大于引擎重试）驱动 run_world
   正常结束、dm_calls 含 failed=1 行、事件流含兜底叙事；
   全离线套件未发现外部调用（socket 护网或 monkeypatch 断言）
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] 若 T011 暴露缺口则修补（预期零代码：降级路径引擎内建，
+- [x] T012 [US3] 若 T011 暴露缺口则修补（预期零代码：降级路径引擎内建，
   research.md R7；本任务兜底）
 
 **Checkpoint**: US3 测试全绿，130+n 回归绿
@@ -121,7 +121,7 @@ dm_calls 全 failed=1；全量离线套件零外部调用（SC-004/005）
 
 ## Phase 6: Polish & 真机验收
 
-- [ ] T013 全量回归 `uv run pytest -m "not real" -q` 全绿；`uv lock --check`
+- [x] T013 全量回归 `uv run pytest -m "not real" -q` 全绿；`uv lock --check`
   无依赖变更
 - [ ] T014 真机验收（quickstart）：`world_talk.db` 沈刻对手戏资产
   `--dm --dm-max-calls 20` 跑 6 tick——dm_calls 覆盖率 100%、至少一行
