@@ -2,15 +2,20 @@
 
 WorldSeed 的全部接触面集中在本模块（research.md R1/R6）：
 - build_scene_config：资产库 → SceneConfig（角色卡含 secret + perception 规则 +
-  机械效果动作集；DM 不启用，R3）
+  机械效果动作集；DM 裁决为显式开关，dm=None 时输出与 006 版逐键一致）
 - run_world：引擎驱动的世界循环（perceive → backend.act → submit → step），
   visible_state 由引擎感知派生（FR-003 单一真相源），契约事件 emit 复用 001 口径
 - 快照：每 tick engine.save_state() → _CaptureRecorder → store.put_world_state；
   resume 时同配置重建引擎 + load_state，事件编号经 store.max_event_no() 连续
+- DM 审计（010）：_CaptureRecorder 捕获引擎 dm_call 记录，run 结束落 dm_calls 表
 """
+import asyncio
 import json
+import os
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from .dm import build_dm_knowledge, build_dm_provider
 from .persona import PersonaBackend
 from .simulation import _SHOT_BY_KIND  # 001 既定映射，逐字节复用
 from .store import Store
@@ -22,6 +27,27 @@ class WorldConfigError(RuntimeError):
 
 class WorldSnapshotError(RuntimeError):
     """快照损坏或版本不兼容。"""
+
+
+@dataclass
+class DMOptions:
+    """真实裁决开关与参数。run_world/build_scene_config 传 None 即不启用。"""
+
+    hint: str = "判定该动作在世界中的结果：成败、后果、对他人的可感知影响。"
+    allowed_ops: list[str] = field(
+        default_factory=lambda: ["set", "increment", "decrement", "emit_event"])
+    max_effects: int = 5
+    knowledge_chars: int = 2000
+    max_calls: int = 50
+    model: str = ""
+    timeout_s: float = 30.0
+    max_retries: int = 2
+
+    def __post_init__(self):
+        if not self.model:
+            # 默认非思考模型：deepseek-flash 为思考模型，不支持裁决所需的
+            # tool_choice（真机实测 010）
+            self.model = os.environ.get("DM_MODEL", "deepseek-chat")
 
 
 # 机械效果动作集（无 DM 段；say/whisper/act 口径照 teahouse.yaml 模板）
@@ -81,10 +107,12 @@ _PERCEPTION = {
 
 
 def build_scene_config(store: Store, character_ids: list[str],
-                       location_id: str) -> dict:
+                       location_id: str, dm: DMOptions | None = None) -> dict:
     """资产库 → SceneConfig 原始 dict（引擎 SceneConfig.model_validate 校验）。
 
     缺角色/缺场景时抛 WorldConfigError 并指出缺口（FR-001）。
+    dm 非 None 时：act 动作挂裁决配置、scene 注入 dm_knowledge 与成本帽；
+    dm=None 时输出与 006 版逐键一致（兼容锚点）。
     """
     if not character_ids:
         raise WorldConfigError("世界配置缺少角色资产（character_ids 为空）")
@@ -125,7 +153,7 @@ def build_scene_config(store: Store, character_ids: list[str],
             },
         })
 
-    return {
+    config = {
         "scene": {"id": location_id,
                   "description": appearance.get("description") or scene_asset["name"]},
         "entities": entities,
@@ -134,19 +162,41 @@ def build_scene_config(store: Store, character_ids: list[str],
         "perception": _PERCEPTION,
         "auto_tick": [],
     }
+    if dm is not None:
+        config["actions"] = {
+            **config["actions"],
+            "act": {**config["actions"]["act"], "dm": {
+                "hint": dm.hint,
+                "allowed_ops": dm.allowed_ops,
+                "max_effects": dm.max_effects,
+            }},
+        }
+        config["scene"]["dm_knowledge"] = build_dm_knowledge(
+            store, [*character_ids, location_id], dm.knowledge_chars)
+        config["scene"]["max_dm_calls"] = dm.max_calls
+    return config
 
 
 class _CaptureRecorder:
     """捕获 engine.save_state() 的数据（引擎自带 NullRecorder 是无操作，
-    RunRecorder 落 ~/.worldseed 不可配路径 —— research.md R4）。"""
+    RunRecorder 落 ~/.worldseed 不可配路径 —— research.md R4）。
+
+    010 起同时捕获 dm_call 审计记录（引擎成功/失败路径都会 record）。"""
 
     def __init__(self):
         from worldseed.persistence import NullRecorder
         self._inner = NullRecorder()
         self.last_state: dict | None = None
+        self.dm_calls: list[dict] = []
 
     def __getattr__(self, name):
         return getattr(self._inner, name)
+
+    def record(self, kind: str, tick: int, **data):
+        if kind == "dm_call":
+            self.dm_calls.append({"tick": tick, **data})
+        else:
+            self._inner.record(kind, tick, **data)
 
     def save_state(self, entities, tick, **kwargs):
         self.last_state = {
@@ -156,13 +206,13 @@ class _CaptureRecorder:
         }
 
 
-def _make_engine(config: dict):
+def _make_engine(config: dict, dm_provider=None):
     from worldseed.models.config_schema import SceneConfig
     from worldseed.world import WorldEngine
 
     recorder = _CaptureRecorder()
     engine = WorldEngine(config=SceneConfig.model_validate(config),
-                         recorder=recorder)
+                         recorder=recorder, dm_provider=dm_provider)
     engine.register_from_config()
     return engine, recorder
 
@@ -206,10 +256,18 @@ def _snapshot(engine, recorder: _CaptureRecorder, store: Store,
 
 def run_world(store: Store, run_id: str, world_id: str,
               character_ids: list[str], location_id: str, ticks: int,
-              backend: PersonaBackend, resume: bool = False) -> list[dict]:
-    """引擎驱动的世界循环；resume=True 时从 worlds.state 最近快照续跑。"""
-    config = build_scene_config(store, character_ids, location_id)
-    engine, recorder = _make_engine(config)
+              backend: PersonaBackend, resume: bool = False,
+              dm: DMOptions | None = None,
+              dm_provider=None) -> list[dict]:
+    """引擎驱动的世界循环；resume=True 时从 worlds.state 最近快照续跑。
+
+    dm 非 None 时启用真实裁决（dm_provider 为 None 则经 build_dm_provider
+    构造；测试可注入 MockDMProvider）；run 结束后 dm_call 审计落库。
+    """
+    if dm is not None and dm_provider is None:
+        dm_provider = build_dm_provider(dm)
+    config = build_scene_config(store, character_ids, location_id, dm=dm)
+    engine, recorder = _make_engine(config, dm_provider=dm_provider)
 
     start_tick = 1
     if resume:
@@ -285,8 +343,22 @@ def run_world(store: Store, run_id: str, world_id: str,
                     [prev_event_by_char[cid]] if cid in prev_event_by_char else [],
                 )
                 prev_event_by_char[cid] = emitted["event_id"]
-        engine.step()
+        if dm_provider is not None:
+            asyncio.run(engine.step_async())
+        else:
+            engine.step()
         _snapshot(engine, recorder, store, world_id)
+
+    for rec in recorder.dm_calls:
+        store.put_dm_call(
+            run_id, rec["tick"], rec.get("action", ""),
+            rec.get("agent_id", ""),
+            json.dumps(rec.get("params", {}), ensure_ascii=False),
+            rec.get("hint", ""), rec.get("narrative", ""),
+            json.dumps(rec.get("effects", []), ensure_ascii=False),
+            rec.get("tokens_in", 0), rec.get("tokens_out", 0),
+            rec.get("elapsed_s", 0.0), bool(rec.get("failed", False)),
+        )
 
     store.finish_run(run_id, "done")
     return events

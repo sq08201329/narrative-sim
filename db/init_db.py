@@ -57,6 +57,24 @@ CREATE TABLE IF NOT EXISTS research_materials (
 );
 CREATE INDEX IF NOT EXISTS idx_materials_asset ON research_materials(asset_id);
 CREATE INDEX IF NOT EXISTS idx_materials_query ON research_materials(query);
+
+CREATE TABLE IF NOT EXISTS dm_calls (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     TEXT NOT NULL REFERENCES runs(run_id),
+    tick       INTEGER NOT NULL,
+    action     TEXT NOT NULL,
+    agent_id   TEXT NOT NULL,
+    params     TEXT NOT NULL,
+    hint       TEXT,
+    narrative  TEXT,
+    effects    TEXT NOT NULL,
+    tokens_in  INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    elapsed_s  REAL NOT NULL DEFAULT 0,
+    failed     INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_dm_calls_run ON dm_calls(run_id);
 """
 
 

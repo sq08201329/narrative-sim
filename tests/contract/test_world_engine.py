@@ -176,8 +176,10 @@ def test_worldseed_import_boundary():
 
     root = Path(__file__).resolve().parent.parent.parent
     allowed = {root / "orchestrator" / "world.py",
+               root / "orchestrator" / "dm.py",
                root / "scripts" / "run_world_chain.py",
-               root / "tests" / "contract" / "test_world_engine.py"}
+               root / "tests" / "contract" / "test_world_engine.py",
+               root / "tests" / "contract" / "test_dm_adjudicator.py"}
     offenders = []
     for target in [root / "orchestrator", root / "scripts"]:
         for f in target.rglob("*.py"):
