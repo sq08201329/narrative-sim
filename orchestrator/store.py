@@ -181,6 +181,28 @@ class Store:
             ).fetchall()
         return [json.loads(r["payload"]) for r in rows]
 
+    def list_asset_summaries(self, type: str | None = None) -> list[dict]:
+        """资产概要（011 MCP list_assets）：含当前修订版号，按 asset_id 排序。"""
+        sql = ("SELECT asset_id, type, name, status, current_revision,"
+               " created_at FROM assets")
+        args: tuple = ()
+        if type is not None:
+            sql += " WHERE type=?"
+            args = (type,)
+        rows = self._conn.execute(sql + " ORDER BY asset_id", args).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_materials(self, keyword: str) -> list[dict]:
+        """原料关键词检索（query/context 子串，大小写不敏感）。"""
+        rows = self._conn.execute(
+            "SELECT id, asset_id, query, retriever, context, created_at"
+            " FROM research_materials"
+            " WHERE lower(query) LIKE ? OR lower(context) LIKE ?"
+            " ORDER BY id",
+            (f"%{keyword.lower()}%", f"%{keyword.lower()}%"),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     # ---- 运行与世界 ----
 
     def run_exists(self, run_id: str) -> bool:

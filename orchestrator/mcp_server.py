@@ -155,4 +155,104 @@ def build_server() -> FastMCP:
             raise ToolError("FetchFailed: 目标页不可抓取或无可提取正文")
         return page
 
+    # ---- 011 US1：读接口（创作 agent 全读路径，零文件中转） ----
+
+    @mcp.tool()
+    def list_assets(type: str | None = None) -> dict:
+        """列出资产概要（asset_id/type/name/status/current_revision）。
+        type 可筛 character/prop/scene/epoch。"""
+        store = _store()
+        try:
+            return {"assets": store.list_asset_summaries(type)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_asset(asset_id: str) -> dict:
+        """读资产完整卡（persona_spec/appearance/provenance/当前修订版号）。
+        persona_spec.secret 为创作可见、仿真角色不可见信息。"""
+        store = _store()
+        try:
+            try:
+                asset = store.get_asset(asset_id)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+            asset["current_revision"] = store.current_revision(asset_id)
+            asset["secrecy"] = ("persona_spec.secret：创作可见，"
+                                "仿真中其他角色不可见")
+            return asset
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_materials(asset_id: str) -> dict:
+        """读资产的调研原料（query/retriever/context/created_at）。"""
+        store = _store()
+        try:
+            return {"materials": store.get_materials(asset_id)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def search_materials(keyword: str) -> dict:
+        """原料关键词检索（query/context 子串，大小写不敏感）。"""
+        store = _store()
+        try:
+            return {"materials": store.search_materials(keyword)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_events(run_id: str) -> dict:
+        """直接返回某次 run 的事件列表（与 export_events 文件同口径）。"""
+        store = _store()
+        try:
+            if not store.run_exists(run_id):
+                raise ToolError(f"RunNotFound: run {run_id} 不存在")
+            return {"events": store.export_events(run_id)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_world_state(world_id: str) -> dict:
+        """读世界最新快照 {tick, state}；无快照返回 {tick: None, state: None}。"""
+        store = _store()
+        try:
+            if store.get_world_config(world_id) is None:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+            saved = store.get_world_state(world_id)
+            if saved is None:
+                return {"tick": None, "state": None}
+            tick, state_json = saved
+            return {"tick": tick, "state": json.loads(state_json)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def list_dm_calls(run_id: str) -> dict:
+        """读某次 run 的裁决台账（010 dm_calls 全字段）。"""
+        store = _store()
+        try:
+            if not store.run_exists(run_id):
+                raise ToolError(f"RunNotFound: run {run_id} 不存在")
+            return {"dm_calls": store.list_dm_calls(run_id)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
     return mcp

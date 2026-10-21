@@ -31,7 +31,11 @@ SCENE = {
 }
 
 EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
-                  "export_events", "web_search", "web_fetch"}
+                  "export_events", "web_search", "web_fetch",
+                  # 011 US1 读接口
+                  "list_assets", "get_asset", "get_materials",
+                  "search_materials", "get_events", "get_world_state",
+                  "list_dm_calls"}
 
 
 @pytest.fixture()
@@ -215,3 +219,88 @@ def test_mcp_server_import_boundary():
                 continue
             offenders.append(mod)
     assert offenders == [], f"mcp_server.py 越界 import: {offenders}"
+
+
+# ---------- 011 US1：读接口 ----------
+
+def _seed_run(db_path):
+    """直接经 Store 种一个完成的 run + 事件 + dm_call（读接口的被测数据）。"""
+    from db.init_db import init as init_db
+    init_db(str(db_path))
+    s = Store(str(db_path))
+    s.create_run("run_seed", "w_seed")
+    s.put_event({
+        "event_id": "e0001", "run_id": "run_seed", "tick": 0, "seq": 0,
+        "type": "scene_change", "characters": ["char_a"],
+        "location": "scene_x", "content": "开场", "emotion": "",
+        "cause_refs": [],
+        "shot_hint": {"camera": "wide", "duration_s": 3.0},
+        "created_at": "2026-10-21T00:00:00+00:00",
+    })
+    s.put_dm_call("run_seed", 1, "act", "char_a", "{}", "hint", "叙事",
+                  "[]", 10, 5, 0.5, False)
+    s.finish_run("run_seed", "done")
+    s.put_world_config("w_seed", json.dumps(
+        {"character_ids": ["char_a"], "location_id": "scene_x"}))
+    s.put_world_state("w_seed", 3, json.dumps({"tick": 3, "entities": []}))
+    s.put_material("char_a", "皇城司侦缉手段", "test", "原料正文")
+    s.close()
+
+
+def test_read_tools_full_path(mcp, tmp_path):
+    _seed_run(tmp_path / "mcp.db")
+
+    r = call(mcp, "list_assets", {})
+    ids = {a["asset_id"] for a in r.data["assets"]}
+    assert {"char_a", "scene_x"} <= ids
+    char_entry = next(a for a in r.data["assets"] if a["asset_id"] == "char_a")
+    assert char_entry["current_revision"] == 0
+
+    r = call(mcp, "get_asset", {"asset_id": "char_a"})
+    assert r.data["persona_spec"]["secret"] == "甲的秘密"
+    assert r.data["current_revision"] == 0
+    assert "secrecy" in r.data  # secret 密级标注（创作可见/仿真不可见）
+
+    r = call(mcp, "get_materials", {"asset_id": "char_a"})
+    assert r.data["materials"][0]["query"] == "皇城司侦缉手段"
+    assert r.data["materials"][0]["context"] == "原料正文"
+
+    r = call(mcp, "search_materials", {"keyword": "侦缉"})
+    assert len(r.data["materials"]) == 1
+    r = call(mcp, "search_materials", {"keyword": "侦缉".upper()})
+    assert len(r.data["materials"]) == 1  # 大小写不敏感
+    r = call(mcp, "search_materials", {"keyword": "不存在的词"})
+    assert r.data["materials"] == []
+
+    r = call(mcp, "get_events", {"run_id": "run_seed"})
+    assert len(r.data["events"]) == 1
+    assert r.data["events"][0]["type"] == "scene_change"
+
+    r = call(mcp, "get_world_state", {"world_id": "w_seed"})
+    assert r.data["tick"] == 3
+
+    r = call(mcp, "list_dm_calls", {"run_id": "run_seed"})
+    assert len(r.data["dm_calls"]) == 1
+    assert r.data["dm_calls"][0]["tokens_in"] == 10
+
+
+def test_read_tools_not_found(mcp):
+    with pytest.raises(ToolError, match="AssetNotFound"):
+        call(mcp, "get_asset", {"asset_id": "ghost"})
+    with pytest.raises(ToolError, match="RunNotFound"):
+        call(mcp, "get_events", {"run_id": "ghost"})
+    with pytest.raises(ToolError, match="RunNotFound"):
+        call(mcp, "list_dm_calls", {"run_id": "ghost"})
+    with pytest.raises(ToolError, match="WorldNotFound"):
+        call(mcp, "get_world_state", {"world_id": "ghost"})
+
+
+def test_read_tools_empty_semantics(mcp):
+    """无原料/无快照为空集而非报错。"""
+    r = call(mcp, "get_materials", {"asset_id": "char_a"})
+    assert r.data["materials"] == []
+    call(mcp, "create_world", {"world_id": "w_empty",
+                               "character_ids": ["char_a"],
+                               "location_id": "scene_x"})
+    r = call(mcp, "get_world_state", {"world_id": "w_empty"})
+    assert r.data == {"tick": None, "state": None}
