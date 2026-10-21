@@ -88,6 +88,21 @@ CREATE TABLE IF NOT EXISTS asset_revisions (
     UNIQUE(asset_id, revision)
 );
 CREATE INDEX IF NOT EXISTS idx_revisions_asset ON asset_revisions(asset_id);
+
+CREATE TABLE IF NOT EXISTS interlude_memories (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     TEXT NOT NULL REFERENCES runs(run_id),
+    asset_id   TEXT NOT NULL REFERENCES assets(asset_id),
+    revision   INTEGER NOT NULL DEFAULT 1,
+    summary    TEXT NOT NULL,
+    event_refs TEXT NOT NULL,
+    channel    TEXT NOT NULL,
+    tokens_in  INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(run_id, asset_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_interlude_run ON interlude_memories(run_id, asset_id);
 """
 
 

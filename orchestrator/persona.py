@@ -15,6 +15,11 @@ class PersonaBackend(Protocol):
         "emotion": str}, ...]，保持产出顺序（通常内心在前、开口在后）。"""
         ...
 
+    def seed_memory(self, asset_id: str, text: str) -> None:
+        """注入上一幕记忆（012）。可选实现；不实现的后端由调用方
+        hasattr 检测后跳过。"""
+        ...
+
 
 class MockPersonaBackend:
     """确定性假后端：按 tick 从内置剧本取动作，可离线重复运行。"""
@@ -25,6 +30,12 @@ class MockPersonaBackend:
         ("dialogue", "诸位久候，在下林昭，初到贵地。", "克制"),
         ("action", "{name}借着添茶的功夫，将纸条压入了壶底。", "镇定"),
     ]
+
+    def __init__(self):
+        self.seeded: list[tuple[str, str]] = []  # 012 spy：注入记录
+
+    def seed_memory(self, asset_id: str, text: str) -> None:
+        self.seeded.append((asset_id, text))
 
     def act(self, persona_spec: dict, visible_state: dict) -> list[dict]:
         name = persona_spec.get("name", "角色")
