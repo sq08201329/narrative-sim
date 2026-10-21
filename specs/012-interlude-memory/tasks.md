@@ -120,10 +120,10 @@ tokens=0（quickstart 离线 3/5）
 ## Phase 6: Polish & 真机验收
 
 - [x] T015 全量回归 `uv run pytest -m "not real" -q` 全绿
-- [ ] T016 真机验收（quickstart 真机节）：world_talk.db talk_r1 生成
+- [x] T016 真机验收（quickstart 真机节）：world_talk.db talk_r1 生成
   llm 记忆 → 二次生成全复用零计费（SC-003）→ 第二幕带记忆起跑，
   人工核对引用上一幕经历（SC-002）
-- [ ] T017 标记 tasks.md 全部 [X]；提交
+- [x] T017 标记 tasks.md 全部 [X]；提交
 
 ---
 
