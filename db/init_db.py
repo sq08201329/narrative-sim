@@ -75,7 +75,30 @@ CREATE TABLE IF NOT EXISTS dm_calls (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_dm_calls_run ON dm_calls(run_id);
+
+CREATE TABLE IF NOT EXISTS asset_revisions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id   TEXT NOT NULL REFERENCES assets(asset_id),
+    revision   INTEGER NOT NULL,
+    payload    TEXT NOT NULL,
+    patch      TEXT,
+    reason     TEXT NOT NULL DEFAULT '',
+    author     TEXT NOT NULL DEFAULT 'system',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(asset_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_revisions_asset ON asset_revisions(asset_id);
 """
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """老库幂等迁移：assets 缺 current_revision 列时补上（011）。"""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(assets)").fetchall()}
+    if "current_revision" not in cols:
+        conn.execute(
+            "ALTER TABLE assets ADD COLUMN current_revision"
+            " INTEGER NOT NULL DEFAULT 0"
+        )
 
 
 def init(db_path: str) -> str:
@@ -84,6 +107,8 @@ def init(db_path: str) -> str:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(DDL)
+        _migrate(conn)
+        conn.commit()
     finally:
         conn.close()
     return db_path

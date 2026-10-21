@@ -63,18 +63,23 @@ def build_server() -> FastMCP:
     def create_world(world_id: str, character_ids: list[str],
                      location_id: str, reset: bool = False) -> dict:
         """从资产库组装世界并登记（world_id 供 run_simulation 使用）。
-        资产缺失会明确指出缺口；world_id 已存在时需 reset=True 覆盖。"""
+        资产缺失会明确指出缺口；world_id 已存在时需 reset=True 覆盖。
+        建世界时冻结各资产的修订版号（011 FR-008），后续修订不影响本世界。"""
         store = _store()
         try:
             if store.get_world_config(world_id) is not None and not reset:
                 raise ToolError(
                     f"WorldExists: world {world_id} 已存在（reset=True 可覆盖）")
             cfg = _build_scene_config(store, character_ids, location_id)
+            pins = {aid: store.current_revision(aid)
+                    for aid in [*character_ids, location_id]}
             store.put_world_config(world_id, json.dumps(
-                {"character_ids": character_ids, "location_id": location_id},
+                {"character_ids": character_ids, "location_id": location_id,
+                 "revisions": pins},
                 ensure_ascii=False))
             return {"world_id": world_id, "characters": character_ids,
-                    "location": location_id, "action_count": len(cfg["actions"])}
+                    "location": location_id, "action_count": len(cfg["actions"]),
+                    "revision_pins": pins}
         except ToolError:
             raise
         except Exception as e:
@@ -85,10 +90,14 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def run_simulation(world_id: str, run_id: str, ticks: int,
                        backend: str = "tinytroupe",
-                       resume: bool = False) -> dict:
+                       resume: bool = False, dm: bool = False,
+                       dm_max_calls: int = 50,
+                       dm_knowledge_chars: int = 2000) -> dict:
         """跑仿真：world_id 需先 create_world；resume=True 从最近快照续跑。
         backend=tinytroupe（默认真后端，每 tick 每角色约 15-30s）或 mock（离线演示）。
-        返回 {run_id, event_count, ticks, cost_tokens}。"""
+        dm=True 启用真实裁决（010，需 DEEPSEEK_API_KEY，每次裁决一次模型调用）。
+        返回 {run_id, event_count, ticks, cost_tokens}；dm=True 时另含
+        dm_calls/dm_failed。"""
         store = _store()
         try:
             cfg = store.get_world_config(world_id)
@@ -102,14 +111,25 @@ def build_server() -> FastMCP:
                 from .persona_tinytroupe import TinyTroupeBackend
                 be = TinyTroupeBackend()
                 be.reset_cost_stats()
+            dm_options = None
+            if dm:
+                from .world import DMOptions
+                dm_options = DMOptions(knowledge_chars=dm_knowledge_chars,
+                                       max_calls=dm_max_calls)
             events = _run_world(store, run_id, world_id, cfg["character_ids"],
-                                cfg["location_id"], ticks, be, resume=resume)
+                                cfg["location_id"], ticks, be, resume=resume,
+                                dm=dm_options, pins=cfg.get("revisions"))
             cost = None
             if backend != "mock":
                 cost = be.collect_total_tokens()
                 store.update_run_cost(run_id, cost)
-            return {"run_id": run_id, "event_count": len(events),
-                    "ticks": ticks, "cost_tokens": cost}
+            result = {"run_id": run_id, "event_count": len(events),
+                      "ticks": ticks, "cost_tokens": cost}
+            if dm:
+                calls = store.list_dm_calls(run_id)
+                result["dm_calls"] = len(calls)
+                result["dm_failed"] = sum(1 for c in calls if c["failed"])
+            return result
         except ToolError:
             raise
         except Exception as e:
@@ -154,5 +174,234 @@ def build_server() -> FastMCP:
         if page is None:
             raise ToolError("FetchFailed: 目标页不可抓取或无可提取正文")
         return page
+
+    # ---- 011 US1：读接口（创作 agent 全读路径，零文件中转） ----
+
+    @mcp.tool()
+    def list_assets(type: str | None = None) -> dict:
+        """列出资产概要（asset_id/type/name/status/current_revision）。
+        type 可筛 character/prop/scene/epoch。"""
+        store = _store()
+        try:
+            return {"assets": store.list_asset_summaries(type)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_asset(asset_id: str) -> dict:
+        """读资产完整卡（persona_spec/appearance/provenance/当前修订版号）。
+        persona_spec.secret 为创作可见、仿真角色不可见信息。"""
+        store = _store()
+        try:
+            try:
+                asset = store.get_asset(asset_id)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+            asset["current_revision"] = store.current_revision(asset_id)
+            asset["secrecy"] = ("persona_spec.secret：创作可见，"
+                                "仿真中其他角色不可见")
+            return asset
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_materials(asset_id: str) -> dict:
+        """读资产的调研原料（query/retriever/context/created_at）。"""
+        store = _store()
+        try:
+            return {"materials": store.get_materials(asset_id)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def search_materials(keyword: str) -> dict:
+        """原料关键词检索（query/context 子串，大小写不敏感）。"""
+        store = _store()
+        try:
+            return {"materials": store.search_materials(keyword)}
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_events(run_id: str) -> dict:
+        """直接返回某次 run 的事件列表（与 export_events 文件同口径）。"""
+        store = _store()
+        try:
+            if not store.run_exists(run_id):
+                raise ToolError(f"RunNotFound: run {run_id} 不存在")
+            return {"events": store.export_events(run_id)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_world_state(world_id: str) -> dict:
+        """读世界最新快照 {tick, state}；无快照返回 {tick: None, state: None}。"""
+        store = _store()
+        try:
+            if store.get_world_config(world_id) is None:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+            saved = store.get_world_state(world_id)
+            if saved is None:
+                return {"tick": None, "state": None}
+            tick, state_json = saved
+            return {"tick": tick, "state": json.loads(state_json)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def list_dm_calls(run_id: str) -> dict:
+        """读某次 run 的裁决台账（010 dm_calls 全字段）。"""
+        store = _store()
+        try:
+            if not store.run_exists(run_id):
+                raise ToolError(f"RunNotFound: run {run_id} 不存在")
+            return {"dm_calls": store.list_dm_calls(run_id)}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 US2：修订与回滚 ----
+
+    @mcp.tool()
+    def revise_asset(asset_id: str, patch: dict, reason: str,
+                     author: str = "creation-agent",
+                     base_revision: int | None = None) -> dict:
+        """修订资产（merge patch 深合并，值 None 删键）存为新版本。
+        base_revision 乐观锁：与当前版不符返回 RevisionConflict。
+        返回 {asset_id, revision, impacted, warning}——impacted 列出引用过
+        旧版的世界/run（修订不改历史，重拍或新建世界才用新版）。"""
+        from .revision import revise
+        store = _store()
+        try:
+            try:
+                return revise(store, asset_id, patch, reason, author,
+                              base_revision)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def rollback_asset(asset_id: str, to_revision: int) -> dict:
+        """回滚资产到指定修订版（历史保留，仅移动当前指针）。
+        返回 {asset_id, current_revision, stale_worlds}——stale_worlds 为
+        冻结了更高版号的世界（数据不变，仅标记）。"""
+        from .revision import rollback
+        store = _store()
+        try:
+            try:
+                return rollback(store, asset_id, to_revision)
+            except KeyError:
+                raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 US3：移交包 ----
+
+    @mcp.tool()
+    def export_handoff(world_id: str, out_dir: str = "handoff",
+                       run_id: str | None = None,
+                       overwrite: bool = False) -> dict:
+        """导出自描述移交目录（manifest + assets + events + world 快照 +
+        dm_calls + materials + sources），供创作 agent team 消费。
+        目录已存在且 overwrite=False 时拒绝（HandoffExists）。"""
+        from .handoff import export_handoff as _export
+        store = _store()
+        try:
+            try:
+                return _export(store, world_id, out_dir, run_id, overwrite)
+            except KeyError:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 FR-014：立项调研 ----
+
+    @mcp.tool()
+    def research_brief(theme: str) -> dict:
+        """立项调研（009）：题材 → 三类清单 → 批量执行入库（含去重漏斗）。
+        返回 {brief, ledger}。注意：每条调研一次外部调用，分钟级耗时，
+        按次产生检索与模型成本（宪章 VI）。"""
+        from .brief import execute_brief as _execute
+        from .brief import generate_brief as _generate
+        store = _store()
+        try:
+            brief = _generate(theme)
+            ledger = _execute(brief, store)
+            return {"brief": brief, "ledger": ledger}
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 011 US4：重拍 ----
+    @mcp.tool()
+    def reshoot(world_id: str, new_run_id: str, ticks: int,
+                use_latest: bool = False, backend: str = "mock",
+                dm: bool = False) -> dict:
+        """重拍某世界：use_latest=False 按冻结版号原样重跑；True 把版号
+        重钉到各资产当前版（先 revise_asset 再重拍即修订重拍）。
+        产出新 run，事件编号全局连续，两版并存可 diff。"""
+        store = _store()
+        try:
+            cfg = store.get_world_config(world_id)
+            if cfg is None:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+            if store.run_exists(new_run_id):
+                raise ToolError(f"RunExists: run {new_run_id} 已存在")
+            if use_latest:
+                cfg["revisions"] = {
+                    aid: store.current_revision(aid)
+                    for aid in [*cfg["character_ids"], cfg["location_id"]]}
+                store.put_world_config(world_id, json.dumps(
+                    cfg, ensure_ascii=False))
+            if backend == "mock":
+                be = MockPersonaBackend()
+            else:
+                from .persona_tinytroupe import TinyTroupeBackend
+                be = TinyTroupeBackend()
+            dm_options = None
+            if dm:
+                from .world import DMOptions
+                dm_options = DMOptions()
+            events = _run_world(store, new_run_id, world_id,
+                                cfg["character_ids"], cfg["location_id"],
+                                ticks, be, dm=dm_options,
+                                pins=cfg.get("revisions"))
+            return {"run_id": new_run_id, "event_count": len(events),
+                    "revision_pins": cfg.get("revisions") or {}}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
 
     return mcp
