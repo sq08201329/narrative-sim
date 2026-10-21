@@ -163,6 +163,17 @@ class Store:
             raise KeyError(f"资产不存在: {asset_id}")
         return int(row["current_revision"])
 
+    def ensure_revision0(self, asset_id: str) -> None:
+        """存量资产（011 前入库、无修订行）以当前内容补建 revision 0，
+        保证版号锚点可解析（幂等）。"""
+        if self._revision_count(asset_id) > 0:
+            return
+        current = self.get_asset(asset_id)
+        self._insert_revision(asset_id, json.dumps(current,
+                                                   ensure_ascii=False),
+                              None, "存量资产建档", "system")
+        self._conn.commit()
+
     def list_world_configs(self) -> list[dict]:
         """全部世界的 {world_id, config(已解析)}（修订 impacted 反查用）。"""
         rows = self._conn.execute(
@@ -382,3 +393,54 @@ class Store:
             "SELECT * FROM dm_calls WHERE run_id=? ORDER BY id", (run_id,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # ---- 幕间记忆（012）----
+
+    def put_memory(self, run_id: str, asset_id: str, summary: str,
+                   event_refs: list[str], channel: str,
+                   tokens_in: int = 0, tokens_out: int = 0,
+                   reason: str = "") -> int:
+        """同 (run_id, asset_id) 自动升 revision 追加，返回新版号。"""
+        row = self._conn.execute(
+            "SELECT COALESCE(MAX(revision) + 1, 1) AS n FROM interlude_memories"
+            " WHERE run_id=? AND asset_id=?", (run_id, asset_id),
+        ).fetchone()
+        rev = int(row["n"])
+        self._conn.execute(
+            "INSERT INTO interlude_memories(run_id, asset_id, revision,"
+            " summary, event_refs, channel, reason, tokens_in, tokens_out)"
+            " VALUES(?,?,?,?,?,?,?,?,?)",
+            (run_id, asset_id, rev, summary,
+             json.dumps(event_refs, ensure_ascii=False), channel,
+             reason, tokens_in, tokens_out),
+        )
+        self._conn.commit()
+        return rev
+
+    def get_memory(self, run_id: str, asset_id: str) -> dict | None:
+        """当前版（MAX revision）；无记录返回 None。"""
+        row = self._conn.execute(
+            "SELECT * FROM interlude_memories WHERE run_id=? AND asset_id=?"
+            " ORDER BY revision DESC LIMIT 1", (run_id, asset_id),
+        ).fetchone()
+        if row is None:
+            return None
+        d = dict(row)
+        d["event_refs"] = json.loads(d["event_refs"])
+        return d
+
+    def list_memories(self, run_id: str) -> list[dict]:
+        """该 run 每角色当前版记忆。"""
+        rows = self._conn.execute(
+            "SELECT m.* FROM interlude_memories m"
+            " JOIN (SELECT asset_id, MAX(revision) AS mr"
+            "       FROM interlude_memories WHERE run_id=? GROUP BY asset_id) t"
+            " ON m.run_id=? AND m.asset_id=t.asset_id AND m.revision=t.mr"
+            " ORDER BY m.asset_id", (run_id, run_id),
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["event_refs"] = json.loads(d["event_refs"])
+            out.append(d)
+        return out

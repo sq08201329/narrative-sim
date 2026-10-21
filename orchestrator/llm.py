@@ -52,3 +52,15 @@ def chat_json(messages: list[dict], tier: str = "fast") -> dict:
 
     out = chat(messages, tier=tier, response_format={"type": "json_object"})
     return json.loads(out)
+
+
+def chat_with_usage(messages: list[dict],
+                    tier: str = "fast") -> tuple[str, int, int]:
+    """chat 变体：返回 (content, tokens_in, tokens_out)（012 记忆计量）。"""
+    resp = client().chat.completions.create(
+        model=_model(tier), messages=messages
+    )
+    usage = resp.usage
+    return (resp.choices[0].message.content,
+            getattr(usage, "prompt_tokens", 0),
+            getattr(usage, "completion_tokens", 0))

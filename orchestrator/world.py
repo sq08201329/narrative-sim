@@ -115,13 +115,15 @@ def _pinned_get(store: Store, asset_id: str, pins: dict | None) -> dict:
 
 def build_scene_config(store: Store, character_ids: list[str],
                        location_id: str, dm: DMOptions | None = None,
-                       pins: dict | None = None) -> dict:
+                       pins: dict | None = None,
+                       memories: dict[str, str] | None = None) -> dict:
     """资产库 → SceneConfig 原始 dict（引擎 SceneConfig.model_validate 校验）。
 
     缺角色/缺场景时抛 WorldConfigError 并指出缺口（FR-001）。
     dm 非 None 时：act 动作挂裁决配置、scene 注入 dm_knowledge 与成本帽；
     dm=None 时输出与 006 版逐键一致（兼容锚点）。
     pins 非 None 时按修订版号取卡（世界冻结锚点），None 取当前版。
+    memories 非 None 时角色卡加 memory 键（012 幕间记忆，空串不加）。
     """
     if not character_ids:
         raise WorldConfigError("世界配置缺少角色资产（character_ids 为空）")
@@ -159,6 +161,8 @@ def build_scene_config(store: Store, character_ids: list[str],
                 "personality": str(personality) or "平平无奇",
                 "goals": spec.get("goals", []),
                 "secret": str(spec.get("secret") or beliefs or "没有特别的秘密"),
+                **({"memory": memories[cid]}
+                   if memories and memories.get(cid) else {}),
             },
         })
 
@@ -267,17 +271,30 @@ def run_world(store: Store, run_id: str, world_id: str,
               character_ids: list[str], location_id: str, ticks: int,
               backend: PersonaBackend, resume: bool = False,
               dm: DMOptions | None = None,
-              dm_provider=None, pins: dict | None = None) -> list[dict]:
+              dm_provider=None, pins: dict | None = None,
+              memory_from: str | None = None) -> list[dict]:
     """引擎驱动的世界循环；resume=True 时从 worlds.state 最近快照续跑。
 
     dm 非 None 时启用真实裁决（dm_provider 为 None 则经 build_dm_provider
     构造；测试可注入 MockDMProvider）；run 结束后 dm_call 审计落库。
     pins 非 None 时按修订版号取卡（011 世界冻结锚点）。
+    memory_from 非 None 时注入上一幕记忆（012：后端 seed + 角色卡 memory
+    键两路；无记忆的角色两路都跳过）。
     """
+    memories: dict[str, str] | None = None
+    if memory_from is not None:
+        memories = {}
+        for cid in character_ids:
+            m = store.get_memory(memory_from, cid)
+            if m and m["summary"]:
+                memories[cid] = m["summary"]
+                seed = getattr(backend, "seed_memory", None)
+                if callable(seed):
+                    seed(cid, m["summary"])
     if dm is not None and dm_provider is None:
         dm_provider = build_dm_provider(dm)
     config = build_scene_config(store, character_ids, location_id, dm=dm,
-                                pins=pins)
+                                pins=pins, memories=memories)
     engine, recorder = _make_engine(config, dm_provider=dm_provider)
 
     start_tick = 1

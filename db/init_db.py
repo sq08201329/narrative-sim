@@ -88,16 +88,40 @@ CREATE TABLE IF NOT EXISTS asset_revisions (
     UNIQUE(asset_id, revision)
 );
 CREATE INDEX IF NOT EXISTS idx_revisions_asset ON asset_revisions(asset_id);
+
+CREATE TABLE IF NOT EXISTS interlude_memories (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id     TEXT NOT NULL REFERENCES runs(run_id),
+    asset_id   TEXT NOT NULL REFERENCES assets(asset_id),
+    revision   INTEGER NOT NULL DEFAULT 1,
+    summary    TEXT NOT NULL,
+    event_refs TEXT NOT NULL,
+    channel    TEXT NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    tokens_in  INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(run_id, asset_id, revision)
+);
+CREATE INDEX IF NOT EXISTS idx_interlude_run ON interlude_memories(run_id, asset_id);
 """
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
-    """老库幂等迁移：assets 缺 current_revision 列时补上（011）。"""
+    """老库幂等迁移：assets 缺 current_revision 列时补上（011）；
+    interlude_memories 缺 reason 列时补上（012 T018）。"""
     cols = {r[1] for r in conn.execute("PRAGMA table_info(assets)").fetchall()}
     if "current_revision" not in cols:
         conn.execute(
             "ALTER TABLE assets ADD COLUMN current_revision"
             " INTEGER NOT NULL DEFAULT 0"
+        )
+    cols = {r[1] for r in conn.execute(
+        "PRAGMA table_info(interlude_memories)").fetchall()}
+    if cols and "reason" not in cols:
+        conn.execute(
+            "ALTER TABLE interlude_memories ADD COLUMN reason"
+            " TEXT NOT NULL DEFAULT ''"
         )
 
 
