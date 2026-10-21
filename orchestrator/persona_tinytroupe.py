@@ -152,6 +152,14 @@ class TinyTroupeBackend(PersonaBackend):
         from tinytroupe.clients import client
         client().reset_cost_stats()
 
+    def seed_memory(self, asset_id: str, text: str) -> None:
+        """注入上一幕记忆（012）：写入情景记忆，参与后续 act 的记忆检索。"""
+        person = self._get_person(asset_id, {"name": asset_id})
+        person.episodic_memory.store({
+            "type": "observation",
+            "content": f"上一幕的经历：\n{text}",
+        })
+
     def collect_total_tokens(self) -> int:
         from tinytroupe.clients import client
         return int(client().get_cost_stats().get("total_tokens", 0))

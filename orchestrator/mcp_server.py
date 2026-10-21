@@ -61,10 +61,12 @@ def build_server() -> FastMCP:
 
     @mcp.tool()
     def create_world(world_id: str, character_ids: list[str],
-                     location_id: str, reset: bool = False) -> dict:
+                     location_id: str, reset: bool = False,
+                     memory_from: str | None = None) -> dict:
         """从资产库组装世界并登记（world_id 供 run_simulation 使用）。
         资产缺失会明确指出缺口；world_id 已存在时需 reset=True 覆盖。
-        建世界时冻结各资产的修订版号（011 FR-008），后续修订不影响本世界。"""
+        建世界时冻结各资产的修订版号（011 FR-008），后续修订不影响本世界。
+        memory_from 指定上一幕来源 run（012），其角色记忆将在起跑时注入。"""
         store = _store()
         try:
             if store.get_world_config(world_id) is not None and not reset:
@@ -75,11 +77,11 @@ def build_server() -> FastMCP:
                     for aid in [*character_ids, location_id]}
             store.put_world_config(world_id, json.dumps(
                 {"character_ids": character_ids, "location_id": location_id,
-                 "revisions": pins},
+                 "revisions": pins, "memory_from": memory_from},
                 ensure_ascii=False))
             return {"world_id": world_id, "characters": character_ids,
                     "location": location_id, "action_count": len(cfg["actions"]),
-                    "revision_pins": pins}
+                    "revision_pins": pins, "memory_from": memory_from}
         except ToolError:
             raise
         except Exception as e:
@@ -92,7 +94,8 @@ def build_server() -> FastMCP:
                        backend: str = "tinytroupe",
                        resume: bool = False, dm: bool = False,
                        dm_max_calls: int = 50,
-                       dm_knowledge_chars: int = 2000) -> dict:
+                       dm_knowledge_chars: int = 2000,
+                       memory_from: str | None = None) -> dict:
         """跑仿真：world_id 需先 create_world；resume=True 从最近快照续跑。
         backend=tinytroupe（默认真后端，每 tick 每角色约 15-30s）或 mock（离线演示）。
         dm=True 启用真实裁决（010，需 DEEPSEEK_API_KEY，每次裁决一次模型调用）。
@@ -118,7 +121,9 @@ def build_server() -> FastMCP:
                                        max_calls=dm_max_calls)
             events = _run_world(store, run_id, world_id, cfg["character_ids"],
                                 cfg["location_id"], ticks, be, resume=resume,
-                                dm=dm_options, pins=cfg.get("revisions"))
+                                dm=dm_options, pins=cfg.get("revisions"),
+                                memory_from=memory_from
+                                or cfg.get("memory_from"))
             cost = None
             if backend != "mock":
                 cost = be.collect_total_tokens()
@@ -365,7 +370,8 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def reshoot(world_id: str, new_run_id: str, ticks: int,
                 use_latest: bool = False, backend: str = "mock",
-                dm: bool = False) -> dict:
+                dm: bool = False,
+                memory_from: str | None = None) -> dict:
         """重拍某世界：use_latest=False 按冻结版号原样重跑；True 把版号
         重钉到各资产当前版（先 revise_asset 再重拍即修订重拍）。
         产出新 run，事件编号全局连续，两版并存可 diff。"""
@@ -394,11 +400,58 @@ def build_server() -> FastMCP:
             events = _run_world(store, new_run_id, world_id,
                                 cfg["character_ids"], cfg["location_id"],
                                 ticks, be, dm=dm_options,
-                                pins=cfg.get("revisions"))
+                                pins=cfg.get("revisions"),
+                                memory_from=memory_from
+                                or cfg.get("memory_from"))
             return {"run_id": new_run_id, "event_count": len(events),
                     "revision_pins": cfg.get("revisions") or {}}
         except ToolError:
             raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    # ---- 012：幕间记忆 ----
+
+    @mcp.tool()
+    def generate_interlude_memory(run_id: str, character_ids: list[str],
+                                  channel: str = "template",
+                                  regenerate: bool = False) -> dict:
+        """从指定 run 生成各角色的幕间记忆（按可感知性过滤，私语零泄漏）。
+        channel=template（离线确定性）| llm（真实摘要，每角色一次调用）。
+        同键已存在且 regenerate=False 时复用（reused=True，零重复计费）。
+        未参与来源 run 的角色列入 skipped。"""
+        from .interlude import InterludeError, generate_memories
+        store = _store()
+        try:
+            try:
+                mems = generate_memories(store, run_id, character_ids,
+                                         channel=channel,
+                                         regenerate=regenerate)
+            except InterludeError as e:
+                msg = str(e)
+                if msg.startswith("BadChannel"):
+                    raise ToolError(msg)
+                raise ToolError(f"RunNotFound: {msg}")
+            return {"memories": mems,
+                    "skipped": [m["asset_id"] for m in mems
+                                if m.get("skipped")]}
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
+    @mcp.tool()
+    def get_interlude_memory(run_id: str,
+                             asset_id: str | None = None) -> dict:
+        """读取幕间记忆（asset_id 缺省取该 run 全部当前版）。"""
+        from .interlude import get_memories
+        store = _store()
+        try:
+            return {"memories": get_memories(store, run_id, asset_id)}
         except Exception as e:
             raise _fail(e) from e
         finally:

@@ -207,3 +207,60 @@ def test_compat_anchor_no_memory(store):
     from orchestrator.world import build_scene_config
     cfg = build_scene_config(store, ["char_a"], "scene_hall")
     assert "memory" not in cfg["agents"][0]["character"]
+
+
+# ---------- T012：llm 通道与预算 + memory_from 接线 ----------
+
+def test_llm_channel_with_mock_chat(store_with_run):
+    """llm 通道经 chat 接缝（注入假 completion，零外部调用）。"""
+    from orchestrator.interlude import generate_memories
+
+    def fake_chat(prompt):
+        return ("我记得自己说过客套话，还记得乙的提醒。", 120, 30)
+
+    ms = generate_memories(store_with_run, "run1", ["char_a"],
+                           channel="llm", chat=fake_chat)
+    m = ms[0]
+    assert m["summary"].startswith("我记得")
+    assert m["tokens_in"] == 120 and m["tokens_out"] == 30
+    # 落库计量
+    stored = store_with_run.get_memory("run1", "char_a")
+    assert stored["channel"] == "llm" and stored["tokens_in"] == 120
+
+
+def test_llm_budget_recent_first(store_with_run, monkeypatch):
+    """INTERLUDE_MAX_EVENTS=2：只取新近 2 条进 prompt。"""
+    from orchestrator.interlude import generate_memories
+    monkeypatch.setenv("INTERLUDE_MAX_EVENTS", "2")
+    seen = {}
+
+    def spy_chat(prompt):
+        seen["prompt"] = prompt
+        return ("摘要", 10, 5)
+
+    generate_memories(store_with_run, "run1", ["char_a"], channel="llm",
+                      chat=spy_chat)
+    assert "开场" not in seen["prompt"]      # 最早的被截掉
+    assert "诸位久候" not in seen["prompt"]  # 甲可见 4 条中较早的也截掉
+    assert "这局冲我来" in seen["prompt"]    # 新近保留
+    assert "小心丙" in seen["prompt"]
+
+
+def test_llm_failure_no_partial_write(store_with_run):
+    """服务失败：报错且不落半成品。"""
+    from orchestrator.interlude import generate_memories
+
+    def boom(prompt):
+        raise ConnectionError("llm unreachable")
+
+    with pytest.raises(ConnectionError):
+        generate_memories(store_with_run, "run1", ["char_a"],
+                          channel="llm", chat=boom)
+    assert store_with_run.get_memory("run1", "char_a") is None
+
+
+def test_bad_channel(store_with_run):
+    from orchestrator.interlude import InterludeError, generate_memories
+    with pytest.raises(InterludeError, match="BadChannel"):
+        generate_memories(store_with_run, "run1", ["char_a"],
+                          channel="magic")
