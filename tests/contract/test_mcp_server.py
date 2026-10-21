@@ -37,7 +37,9 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   "search_materials", "get_events", "get_world_state",
                   "list_dm_calls",
                   # 011 US2 修订
-                  "revise_asset", "rollback_asset"}
+                  "revise_asset", "rollback_asset",
+                  # 011 US3 移交
+                  "export_handoff"}
 
 
 @pytest.fixture()
@@ -342,3 +344,22 @@ def test_revise_errors_via_mcp(mcp):
                                    "base_revision": 5})
     with pytest.raises(ToolError, match="RevisionNotFound"):
         call(mcp, "rollback_asset", {"asset_id": "char_a", "to_revision": 99})
+
+
+# ---------- 011 US3：移交包（MCP 面） ----------
+
+def test_export_handoff_via_mcp(mcp, tmp_path):
+    _seed_run(tmp_path / "mcp.db")
+    out = tmp_path / "handoff"
+    r = call(mcp, "export_handoff", {"world_id": "w_seed",
+                                     "out_dir": str(out)})
+    assert r.data["counts"]["events"] == 1
+    assert (out / "w_seed" / "manifest.json").exists()
+    # 覆盖保护
+    with pytest.raises(ToolError, match="HandoffExists"):
+        call(mcp, "export_handoff", {"world_id": "w_seed",
+                                     "out_dir": str(out)})
+    # 不存在的世界
+    with pytest.raises(ToolError, match="WorldNotFound"):
+        call(mcp, "export_handoff", {"world_id": "ghost",
+                                     "out_dir": str(tmp_path / "h2")})

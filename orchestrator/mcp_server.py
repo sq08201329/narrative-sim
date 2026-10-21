@@ -299,4 +299,27 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    # ---- 011 US3：移交包 ----
+
+    @mcp.tool()
+    def export_handoff(world_id: str, out_dir: str = "handoff",
+                       run_id: str | None = None,
+                       overwrite: bool = False) -> dict:
+        """导出自描述移交目录（manifest + assets + events + world 快照 +
+        dm_calls + materials + sources），供创作 agent team 消费。
+        目录已存在且 overwrite=False 时拒绝（HandoffExists）。"""
+        from .handoff import export_handoff as _export
+        store = _store()
+        try:
+            try:
+                return _export(store, world_id, out_dir, run_id, overwrite)
+            except KeyError:
+                raise ToolError(f"WorldNotFound: world {world_id} 不存在")
+        except ToolError:
+            raise
+        except Exception as e:
+            raise _fail(e) from e
+        finally:
+            store.close()
+
     return mcp
