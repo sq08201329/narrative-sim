@@ -83,19 +83,10 @@ class TinyTroupeBackend(PersonaBackend):
 
     @staticmethod
     def _redirect_tinytroupe_log() -> None:
-        """TinyTroupe 默认把日志写到 cwd（Path.cwd()/tinytroupe.<ts>.log）——
-        重定向到项目 logs/，避免根目录堆积（数据文件管理）。"""
-        try:
-            from datetime import datetime
-            from pathlib import Path
-            from tinytroupe.utils import config as _tt_cfg
-            if _tt_cfg._log_file_path is None:
-                log_dir = Path(__file__).resolve().parent.parent / "logs"
-                log_dir.mkdir(exist_ok=True)
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                _tt_cfg._log_file_path = log_dir / f"tinytroupe.{ts}.log"
-        except Exception:
-            pass  # 日志重定向失败不阻塞后端
+        """TinyTroupe 在包 import 瞬间按 cwd 建日志文件——换绑到 logs/。"""
+        from pathlib import Path
+        from .ttlog import redirect_tinytroupe_log
+        redirect_tinytroupe_log(Path(__file__).resolve().parent.parent)
 
     @staticmethod
     def _bridge_deepseek_env() -> None:
