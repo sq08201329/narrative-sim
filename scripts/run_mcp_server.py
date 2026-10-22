@@ -2,7 +2,7 @@
 
 用法：uv run python scripts/run_mcp_server.py
 环境变量：MCP_TRANSPORT（默认 streamable-http）/ MCP_HOST（默认 127.0.0.1）/
-MCP_PORT（默认 8300）/ NARRATIVE_DB（默认 narrative_sim.db）。
+MCP_PORT（默认 8300）/ NARRATIVE_DB（默认 data/narrative_sim.db）。
 启动零外部检查：调研/嵌入服务不在线不影响启动，工具调用时按各自口径报错。
 """
 import os

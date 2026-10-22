@@ -25,7 +25,7 @@ from .store import Store
 from .world import build_scene_config as _build_scene_config
 from .world import run_world as _run_world
 
-DEFAULT_DB = "narrative_sim.db"
+DEFAULT_DB = "data/narrative_sim.db"
 
 
 def _db_path() -> str:

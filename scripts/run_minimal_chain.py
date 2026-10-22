@@ -73,7 +73,7 @@ SCENE = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="M1 最小仿真链路")
-    parser.add_argument("--db", default="narrative_sim.db")
+    parser.add_argument("--db", default="data/narrative_sim.db")
     parser.add_argument("--out", default=str(ROOT / "exports" / "m1_events.jsonl"))
     parser.add_argument("--run-id", default="m1_run")
     args = parser.parse_args()

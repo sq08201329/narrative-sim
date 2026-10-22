@@ -61,7 +61,7 @@ CHARACTER_1_WITH_SECRET["persona_spec"] = dict(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="M4 WorldSeed 世界链路")
-    parser.add_argument("--db", default="narrative_sim.db")
+    parser.add_argument("--db", default="data/narrative_sim.db")
     parser.add_argument("--out", default=str(ROOT / "exports" / "world_events.jsonl"))
     parser.add_argument("--world-id", default="world_yanyu")
     parser.add_argument("--run-id", default="world_run")

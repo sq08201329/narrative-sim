@@ -22,7 +22,7 @@ from run_minimal_chain import CHARACTER, SCENE  # noqa: E402
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="M2 真后端仿真链路")
-    parser.add_argument("--db", default="narrative_sim.db")
+    parser.add_argument("--db", default="data/narrative_sim.db")
     parser.add_argument("--out", default=str(ROOT / "exports" / "real_events.jsonl"))
     parser.add_argument("--run-id", default="real_run")
     args = parser.parse_args()

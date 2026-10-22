@@ -96,6 +96,9 @@ def test_speech_style_maps_to_style(backend):
 
 
 def test_missing_api_key_raises(monkeypatch):
+    # 隔离 .env（项目根现有真实 key 的 .env，load_dotenv 会回填）
+    monkeypatch.setattr("orchestrator.persona_tinytroupe.load_dotenv",
+                        lambda: None)
     for var in ("OPENAI_API_KEY", "DEEPSEEK_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.invalid")
@@ -104,6 +107,8 @@ def test_missing_api_key_raises(monkeypatch):
 
 
 def test_missing_base_url_raises(monkeypatch):
+    monkeypatch.setattr("orchestrator.persona_tinytroupe.load_dotenv",
+                        lambda: None)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     for var in ("OPENAI_BASE_URL", "DEEPSEEK_BASE_URL"):
         monkeypatch.delenv(var, raising=False)

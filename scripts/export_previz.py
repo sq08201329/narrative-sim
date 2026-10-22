@@ -21,7 +21,7 @@ _PALETTE = ["#4a90d9", "#d97a4a", "#5cb85c", "#b85cd9", "#d9b44a", "#4ad9c8"]
 def main() -> int:
     parser = argparse.ArgumentParser(description="导出 Three.js 预演数据")
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--db", default="narrative_sim.db")
+    parser.add_argument("--db", default="data/narrative_sim.db")
     parser.add_argument("--out", default=str(ROOT / "previz" / "previz_data.js"))
     args = parser.parse_args()
 

@@ -31,7 +31,7 @@ def main() -> int:
     parser.add_argument("--theme", help="题材文本（生成模式）")
     parser.add_argument("--out", help="清单输出路径（生成模式）")
     parser.add_argument("--execute", metavar="FILE", help="执行指定清单文件")
-    parser.add_argument("--db", default="narrative_sim.db", help="SQLite 路径")
+    parser.add_argument("--db", default="data/narrative_sim.db", help="SQLite 路径")
     args = parser.parse_args()
 
     load_dotenv()

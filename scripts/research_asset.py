@@ -23,7 +23,7 @@ def main() -> int:
     parser.add_argument("--type", required=True,
                         choices=["character", "prop", "scene", "epoch"],
                         help="资产类型")
-    parser.add_argument("--db", default="narrative_sim.db", help="SQLite 路径")
+    parser.add_argument("--db", default="data/narrative_sim.db", help="SQLite 路径")
     args = parser.parse_args()
 
     load_dotenv()
