@@ -22,6 +22,15 @@ logger = logging.getLogger(__name__)
 
 MAX_ACT_RETRIES = 3
 
+# 语言锁（014 质量修复）：演员模型可能漂到日式文言/英文。只写进每回合
+# listen 文本，**不写进 persona 的 style 字段**——style 的契约是
+# speech_style 原样映射（test_speech_style_maps_to_style 守着这条）。
+LANGUAGE_LOCK = (
+    "本回合只用中文写内心独白、台词和动作描述（南宋临安街市白话，"
+    "可带浅白文言）；严禁日语假名（平假名/片假名）、日式语法助词、"
+    "日文汉字词，也严禁整句英文或英文情绪词。"
+)
+
 
 class MissingEnvironmentError(RuntimeError):
     """真后端所需环境变量缺失。"""
@@ -67,6 +76,19 @@ class TinyTroupeBackend(PersonaBackend):
         self._person_cls = person_cls
         self._persons: dict[str, object] = {}
         self._max_retries = max_retries
+        if not self._injected:
+            self._clear_agent_registry()
+
+    @staticmethod
+    def _clear_agent_registry() -> None:
+        """清掉上一次运行遗留的全局 agent 注册表。
+
+        TinyPerson.all_agents 是进程级的（实例名用 asset_id），同一进程里
+        第二次跑 tinytroupe 会因重名抛 `Agent name ... is already in use.`；
+        每次新建 backend（即每次 run）前清空，保证可连续多 run。
+        注意前提是 run 串行，不并发。"""
+        from tinytroupe.agent import TinyPerson
+        TinyPerson.clear_agents()
 
     def _setup_semantic_mode(self) -> None:
         """预检嵌入服务：通过则覆盖 Settings.embed_model，否则走 002 降级。"""
@@ -147,6 +169,7 @@ class TinyTroupeBackend(PersonaBackend):
             f"第 {visible_state.get('tick', '?')} 回合。"
             f"地点：{visible_state.get('location', '未知')}。"
             f"{visible_state.get('recent_events', '')}"
+            f"（{LANGUAGE_LOCK}）"
         )
 
     @staticmethod
