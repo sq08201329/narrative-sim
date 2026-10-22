@@ -154,9 +154,10 @@ def test_handoff_with_images(store, tmp_path):
     img_dir.mkdir()
     fake = img_dir / "ref.png"
     fake.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)
-    asset = store.get_asset("char_a")
-    asset["reference_images"] = [str(fake)]  # 绝对/相对路径均应支持
-    store.put_asset(asset)
+    # A1：参考图经 image_generations 登记（reference_images 由它派生）
+    store.put_image_generation("char_a", "p", 1, "2:3", [str(fake)],
+                               [_sha(fake)], "test",
+                               store.current_revision("char_a"))
 
     from orchestrator.handoff import export_handoff
     # 默认：不带图

@@ -668,7 +668,7 @@ def test_generate_reference_image_via_mcp(mcp, monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)  # images/ 落临时目录
     r = call(mcp, "generate_reference_image", {"asset_id": "char_a"})
     assert r.data["paths"][0].startswith("images/char_a/")
-    assert r.data["revision"] == 1
+    assert r.data["revision"] == 0          # A1：出图不升修订
     # 资产字段可读回
     r = call(mcp, "get_asset", {"asset_id": "char_a"})
     assert r.data["reference_images"]
