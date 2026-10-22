@@ -4,19 +4,28 @@
 （import_asset_row / upsert_revision_at / put_material），
 **只碰 assets / asset_revisions / research_materials 三张表**。
 
+B1 口径（2026-10-22）：跨库比对用 **content_sha256**（payload 剔除
+reference_images 后的哈希）。reference_images 差异不算内容分歧——它由出图
+派生，且项目库修订号可能被出图顶得更高。payload_sha256 保留作全量哈希；
+老 bundle 无 content_sha256 时回退旧口径并告警。
+
 用法见 scripts/asset_port.py（export / import / verify）。
 """
 import hashlib
 import json
+import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .store import Store
 
+logger = logging.getLogger(__name__)
+
 FORMAT = "narrative-sim-asset-port/1"
 VALID_TYPES = ("character", "prop", "scene", "epoch")
 IMPORT_TABLES = ("assets", "asset_revisions", "research_materials")
+_IMAGE_REF_FIELD = "reference_images"
 
 
 class AssetPortError(RuntimeError):
@@ -32,11 +41,11 @@ class ManualAssetRejected(AssetPortError):
 
 
 class RevisionConflict(AssetPortError):
-    """同号修订内容不同（或指针不一致）。"""
+    """同号修订内容不同（或指针内容不一致）。"""
 
 
 class DstAhead(AssetPortError):
-    """目标库修订领先于 bundle，拒绝导入。"""
+    """目标库内容领先于 bundle，拒绝导入。"""
 
 
 class DstBehind(AssetPortError):
@@ -56,6 +65,15 @@ def _sha_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def _content_payload(payload: dict) -> dict:
+    """剔除 reference_images 的内容视图（B1 统一比对口径）。"""
+    return {k: v for k, v in payload.items() if k != _IMAGE_REF_FIELD}
+
+
+def _content_sha(payload: dict) -> str:
+    return _sha(_content_payload(payload))
+
+
 def _loads(text: str):
     try:
         return json.loads(text)
@@ -69,6 +87,7 @@ def _bundle_fingerprint(asset: dict, revisions: list[dict],
             "materials": materials, "provenance": provenance}
     return {
         "asset_sha256": asset["payload_sha256"],
+        "asset_content_sha256": asset.get("content_sha256"),
         "revisions_sha256": _sha(revisions),
         "materials_sha256": _sha(materials),
         "bundle_sha256": _sha(body),
@@ -84,7 +103,10 @@ def build_bundle(store: Store, asset_id: str) -> dict:
     if row["type"] not in VALID_TYPES:
         raise BundleCorrupt(f"非法资产类型: {row['type']}")
 
-    payload = store.get_asset(asset_id)
+    cur = int(row["current_revision"])
+    # 原始 payload 取自修订行（不进历史改写）：可能仍带历史遗留的
+    # reference_images；内容比对用 content_sha256（剔除该字段）。
+    raw_payload = _loads(store.get_revision(asset_id, cur)["payload"])
     revisions = []
     for rev in store.list_revisions(asset_id):
         body = _loads(rev["payload"])
@@ -92,6 +114,7 @@ def build_bundle(store: Store, asset_id: str) -> dict:
             "revision": int(rev["revision"]),
             "payload": body,
             "payload_sha256": _sha(body),
+            "content_sha256": _content_sha(body),
             "patch": rev.get("patch"),
             "reason": rev.get("reason") or "",
             "author": rev.get("author") or "system",
@@ -110,7 +133,7 @@ def build_bundle(store: Store, asset_id: str) -> dict:
     materials.sort(key=lambda m: (m["query"], m.get("created_at") or "",
                                   m["context_sha256"]))
 
-    prov = payload.get("provenance") or {}
+    prov = raw_payload.get("provenance") or {}
     manual = (prov.get("retriever") == "manual"
               or prov.get("model") in (None, "none"))
     asset = {
@@ -118,9 +141,11 @@ def build_bundle(store: Store, asset_id: str) -> dict:
         "type": row["type"],
         "name": row["name"],
         "status": row["status"],
-        "current_revision": int(row["current_revision"]),
-        "payload": payload,
-        "payload_sha256": _sha(payload),
+        "current_revision": cur,
+        "payload": raw_payload,
+        "payload_sha256": _sha(raw_payload),
+        "content_sha256": _content_sha(raw_payload),
+        "reference_images": store.reference_images(asset_id),
     }
     provenance = "manual" if manual else "researched"
     return {
@@ -148,12 +173,17 @@ def export_asset(store: Store, asset_id: str, out_path: str) -> dict:
         "provenance": bundle["provenance"],
         "revisions": len(bundle["revisions"]),
         "materials": len(bundle["materials"]),
+        "reference_images": len(bundle["asset"]["reference_images"]),
         "bundle_sha256": bundle["fingerprint"]["bundle_sha256"],
     }
 
 
 def load_bundle(path: str) -> dict:
-    """读取并逐段校验 bundle；任何不符都判为 BundleCorrupt。"""
+    """读取并逐段校验 bundle；任何不符都判为 BundleCorrupt。
+
+    老格式 bundle（无 content_sha256）回退旧口径，标记 bundle["_legacy"]
+    并告警，由调用方提示。
+    """
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as e:
@@ -193,6 +223,11 @@ def load_bundle(path: str) -> dict:
     if not isinstance(asset.get("current_revision"), int):
         raise BundleCorrupt("asset.current_revision 必须是整数")
 
+    legacy = "content_sha256" not in asset
+    if asset.get("content_sha256") is not None:
+        if _content_sha(asset["payload"]) != asset["content_sha256"]:
+            raise BundleCorrupt("asset.content_sha256 不符（文件被改动）")
+
     seen = set()
     for rev in revisions:
         if not isinstance(rev, dict):
@@ -207,6 +242,10 @@ def load_bundle(path: str) -> dict:
             raise BundleCorrupt(f"r{num}.payload 必须是对象")
         if _sha(rev["payload"]) != rev.get("payload_sha256"):
             raise BundleCorrupt(f"r{num}.payload_sha256 不符（文件被改动）")
+        if rev.get("content_sha256") is None:
+            legacy = True
+        elif _content_sha(rev["payload"]) != rev["content_sha256"]:
+            raise BundleCorrupt(f"r{num}.content_sha256 不符（文件被改动）")
     if asset["current_revision"] not in seen:
         raise BundleCorrupt(
             f"current_revision {asset['current_revision']} 不在 revisions 内")
@@ -222,43 +261,60 @@ def load_bundle(path: str) -> dict:
     expected = _bundle_fingerprint(asset, revisions, materials, prov)
     for key, val in expected.items():
         if fingerprint.get(key) != val:
+            if key == "asset_content_sha256" and legacy:
+                continue
             raise BundleCorrupt(f"fingerprint.{key} 不符（文件被改动）")
+    if legacy:
+        logger.warning(
+            "老格式 bundle（无 content_sha256），回退旧口径比对: %s", path)
+        bundle["_legacy"] = True
     return bundle
 
 
+def _src_content_map(bundle: dict) -> dict:
+    return {r["revision"]: (r.get("content_sha256") or r["payload_sha256"])
+            for r in bundle["revisions"]}
+
+
 def verify_bundle(store: Store, path: str) -> dict:
-    """核对 bundle 在目标库是否一一对齐。dst 多出的内容记 extra，不算失败。"""
+    """核对 bundle 在目标库是否一一对齐。
+
+    内容口径：content_sha256（剔除 reference_images）。
+    reference_images 差异单列 images 段，**不算失败**。
+    """
     bundle = load_bundle(path)
     asset = bundle["asset"]
     aid = asset["asset_id"]
+    src_content = asset.get("content_sha256") or asset["payload_sha256"]
     rows = {r["asset_id"]: r for r in store.list_asset_summaries()}
     dst = rows.get(aid)
-    result = {"asset_id": aid, "ok": True, "provenance": bundle["provenance"],
-              "asset": {}, "revisions": {}, "materials": {}}
+    result = {"asset_id": aid, "ok": True,
+              "provenance": bundle["provenance"],
+              "legacy_bundle": bool(bundle.get("_legacy")),
+              "asset": {}, "revisions": {}, "materials": {}, "images": {}}
 
     if dst is None:
         result["asset"] = {"status": "missing"}
         result["ok"] = False
     else:
-        same_payload = _sha(store.get_asset(aid)) == asset["payload_sha256"]
-        same_pointer = dst["current_revision"] == asset["current_revision"]
-        status = "ok" if (same_payload and same_pointer) else "mismatch"
+        dst_asset = store.get_asset(aid)
+        same_content = _content_sha(dst_asset) == src_content
+        status = "ok" if same_content else "mismatch"
         result["asset"] = {"status": status,
                            "current_revision": dst["current_revision"],
                            "expected_revision": asset["current_revision"]}
         result["ok"] = result["ok"] and status == "ok"
 
     if dst is None:
-        dst_revs = {}
+        dst_content = {}
     else:
-        dst_revs = {int(r["revision"]): _sha(_loads(r["payload"]))
-                    for r in store.list_revisions(aid)}
-    src_revs = {r["revision"]: r["payload_sha256"]
-                for r in bundle["revisions"]}
-    missing = sorted(set(src_revs) - set(dst_revs))
-    extra = sorted(set(dst_revs) - set(src_revs))
-    mismatch = sorted(n for n in set(src_revs) & set(dst_revs)
-                      if src_revs[n] != dst_revs[n])
+        dst_content = {int(r["revision"]): _content_sha(_loads(r["payload"]))
+                       for r in store.list_revisions(aid)}
+    src_revs = _src_content_map(bundle)
+    missing = sorted(set(src_revs) - set(dst_content))
+    extra = sorted(set(dst_content) - set(src_revs))
+    mismatch = sorted(n for n in set(src_revs) & set(dst_content)
+                      if src_revs[n] != dst_content[n])
     result["revisions"] = {"missing": missing, "extra": extra,
                            "mismatch": mismatch, "total": len(src_revs)}
     if missing or mismatch:
@@ -278,6 +334,14 @@ def verify_bundle(store: Store, path: str) -> dict:
                            "total": len(src_mats)}
     if mat_missing:
         result["ok"] = False
+
+    src_images = list(asset.get("reference_images") or [])
+    dst_images = store.reference_images(aid) if dst is not None else []
+    result["images"] = {
+        "missing": sorted(set(src_images) - set(dst_images)),
+        "extra": sorted(set(dst_images) - set(src_images)),
+        "src_total": len(src_images), "dst_total": len(dst_images),
+    }
     return result
 
 
@@ -286,12 +350,14 @@ def import_bundle(store: Store, path: str, allow_extend: bool = False,
                   dry_run: bool = False, db_path: str | None = None) -> dict:
     """把 bundle 导入目标库。
 
-    幂等：内容一致的整体跳过；原料按 (query, retriever, context 哈希) 去重。
-    冲突（同号不同内容、dst 领先、指针不一致）报错且不写任何东西。
+    幂等：内容一致整体跳过；原料按 (query, retriever, context 哈希) 去重。
+    目标库修订号更高但内容一致（出图顶起来的）→ 判 identical_content，
+    不写资产、只补原料（B1）。
     """
     bundle = load_bundle(path)
     asset = bundle["asset"]
     aid = asset["asset_id"]
+    legacy = bool(bundle.get("_legacy"))
 
     if bundle["provenance"] == "manual" and not allow_manual:
         raise ManualAssetRejected(
@@ -300,36 +366,39 @@ def import_bundle(store: Store, path: str, allow_extend: bool = False,
 
     rows = {r["asset_id"]: r for r in store.list_asset_summaries()}
     dst = rows.get(aid)
-    src_revs = {r["revision"]: r["payload_sha256"]
-                for r in bundle["revisions"]}
-    dst_revs = ({int(r["revision"]): _sha(_loads(r["payload"]))
-                 for r in store.list_revisions(aid)} if dst else {})
+    src_content = asset.get("content_sha256") or asset["payload_sha256"]
+    src_revs = _src_content_map(bundle)
+    dst_content = ({int(r["revision"]): _content_sha(_loads(r["payload"]))
+                    for r in store.list_revisions(aid)} if dst else {})
 
     action = "insert"
     missing: list[int] = []
     if dst is not None:
-        shared = set(src_revs) & set(dst_revs)
-        bad = sorted(n for n in shared if src_revs[n] != dst_revs[n])
+        shared = set(src_revs) & set(dst_content)
+        bad = sorted(n for n in shared if src_revs[n] != dst_content[n])
         if bad:
             raise RevisionConflict(
-                f"修订冲突: {aid}@r{bad[0]}（同号不同内容），拒绝覆盖")
-        extra = sorted(set(dst_revs) - set(src_revs))
-        if extra:
+                f"修订内容冲突: {aid}@r{bad[0]}（同号不同内容），拒绝覆盖")
+        extra = sorted(set(dst_content) - set(src_revs))
+        if extra and not all(dst_content[n] == src_content for n in extra):
             raise DstAhead(
-                f"目标库领先: {aid} 多出修订 {extra}，拒绝导入（不降级）")
-        missing = sorted(set(src_revs) - set(dst_revs))
-        if not missing:
-            if dst["current_revision"] != asset["current_revision"]:
-                raise RevisionConflict(
-                    f"指针不一致: {aid} dst=r{dst['current_revision']} "
-                    f"bundle=r{asset['current_revision']}")
-            action = "identical"
-        elif not allow_extend:
+                f"目标库内容领先: {aid} 多出修订 {extra} 且内容不同，拒绝导入")
+        missing = sorted(set(src_revs) - set(dst_content))
+        if missing and not allow_extend:
             raise DstBehind(
                 f"目标库落后: {aid} 缺修订 {missing}；"
                 "确认要补齐请加 --allow-extend")
-        else:
+        if missing:
             action = "extend"
+        elif extra:
+            action = "identical_content"
+        else:
+            same = dst_content.get(int(dst["current_revision"])) == src_content
+            if not same:
+                raise RevisionConflict(
+                    f"指针内容不一致: {aid} dst=r{dst['current_revision']} "
+                    f"与 bundle 内容不同")
+            action = "identical"
 
     if dst is None:
         existing = set()
@@ -344,6 +413,7 @@ def import_bundle(store: Store, path: str, allow_extend: bool = False,
         "asset_id": aid,
         "action": action,
         "provenance": bundle["provenance"],
+        "legacy_bundle": legacy,
         "revisions_total": len(bundle["revisions"]),
         "revisions_missing": missing,
         "materials_total": len(bundle["materials"]),
