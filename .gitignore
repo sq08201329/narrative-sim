@@ -29,3 +29,16 @@ handoff/
 logs/
 data/*.db
 tinytroupe.*.log
+
+# 测试产物
+data-gym-cache/
+pytest-of-Administrator/
+
+# 运行时产物：库备份、服务日志、团队启动脚本
+data/*.bak.*
+data/mcp_server.log
+yanyu_server_start.sh
+
+# DSH 项目级技能入口（junction 到 .kimi-code/skills，不进库）
+.dsh/
+
