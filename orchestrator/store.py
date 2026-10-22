@@ -33,6 +33,14 @@ def _validate(payload: dict, schema_name: str) -> None:
         ) from e
 
 
+def _canon_json(text: str) -> str:
+    """按语义规范化 JSON 文本（键排序），用于内容一致性判定。"""
+    try:
+        return json.dumps(json.loads(text), sort_keys=True, ensure_ascii=False)
+    except ValueError:
+        return text
+
+
 class Store:
     """数据库唯一入口。所有读写经此类，外部不得直接连库。"""
 
@@ -173,6 +181,129 @@ class Store:
                                                    ensure_ascii=False),
                               None, "存量资产建档", "system")
         self._conn.commit()
+
+    # ---- 导入专用（asset_port，保号写入；不改 put_asset / put_revision 语义）----
+
+    _IMPORT_TYPES = ("character", "prop", "scene", "epoch")
+
+    def import_asset_row(self, asset: dict, revisions: list[dict]) -> None:
+        """导入专用：按原修订号写入资产行与其修订（单事务，失败整体回滚）。
+
+        asset: {asset_id, type, name, status, payload, current_revision}
+        revisions: [{revision, payload, patch, reason, author, created_at}]
+
+        - type 必须在 character/prop/scene/epoch 内；
+        - asset.payload 经 asset.schema.json 校验；
+        - current_revision 必须被同批修订（或库内已有修订）覆盖，否则报错；
+        - 资产行已存在时更新 payload/name/status/current_revision，不新建版本。
+        冲突判定与导入计划由调用方（asset_port）负责；本方法只落库。
+        """
+        aid = asset.get("asset_id")
+        if not aid:
+            raise ValueError("导入资产缺少 asset_id")
+        atype = asset.get("type")
+        if atype not in self._IMPORT_TYPES:
+            raise ValueError(
+                f"非法资产类型: {atype}（只能是 character/prop/scene/epoch）")
+        name = asset.get("name")
+        if not name:
+            raise ValueError("导入资产缺少 name")
+        payload = asset.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("导入资产 payload 必须是对象")
+        _validate(payload, "asset.schema.json")
+        cur = asset.get("current_revision")
+        if not isinstance(cur, int) or cur < 0:
+            raise ValueError(f"current_revision 非法: {cur!r}")
+        payload_json = json.dumps(payload, ensure_ascii=False)
+
+        try:
+            self._conn.execute("BEGIN")
+            exists = self._conn.execute(
+                "SELECT 1 FROM assets WHERE asset_id=?", (aid,)).fetchone()
+            if exists is None:
+                self._conn.execute(
+                    "INSERT INTO assets(asset_id, type, name, status, payload,"
+                    " current_revision) VALUES(?,?,?,?,?,?)",
+                    (aid, atype, name, asset.get("status", "draft"),
+                     payload_json, cur),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE assets SET type=?, name=?, status=?, payload=?,"
+                    " current_revision=?, updated_at=datetime('now')"
+                    " WHERE asset_id=?",
+                    (atype, name, asset.get("status", "draft"),
+                     payload_json, cur, aid),
+                )
+            for rev in revisions:
+                self.upsert_revision_at(
+                    aid, rev["revision"], rev["payload"],
+                    patch=rev.get("patch"), reason=rev.get("reason", ""),
+                    author=rev.get("author", "system"),
+                    created_at=rev.get("created_at"))
+            covered = self._conn.execute(
+                "SELECT 1 FROM asset_revisions WHERE asset_id=? AND revision=?",
+                (aid, cur)).fetchone()
+            if covered is None:
+                raise ValueError(f"current_revision {cur} 未被修订覆盖: {aid}")
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+    def upsert_revision_at(self, asset_id: str, revision: int, payload: dict,
+                           patch: str | None = None, reason: str = "",
+                           author: str = "system",
+                           created_at: str | None = None) -> int:
+        """导入专用：按指定修订号写入（保号，不重新分配号）。
+
+        同号同内容 → 幂等跳过并返回该号；同号不同内容 → ValueError（冲突）。
+        单独调用时自持事务；被 import_asset_row 调用时加入其事务。
+        """
+        if not isinstance(revision, int) or revision < 0:
+            raise ValueError(f"修订号非法: {revision!r}")
+        if not isinstance(payload, dict):
+            raise ValueError("修订 payload 必须是对象")
+        if self._conn.execute(
+                "SELECT 1 FROM assets WHERE asset_id=?", (asset_id,),
+        ).fetchone() is None:
+            raise KeyError(f"资产不存在: {asset_id}")
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        own_tx = not self._conn.in_transaction
+        try:
+            if own_tx:
+                self._conn.execute("BEGIN")
+            row = self._conn.execute(
+                "SELECT payload FROM asset_revisions"
+                " WHERE asset_id=? AND revision=?",
+                (asset_id, revision)).fetchone()
+            if row is not None:
+                if _canon_json(row["payload"]) != _canon_json(payload_json):
+                    raise ValueError(
+                        f"修订冲突: {asset_id}@r{revision}（同号不同内容）")
+                if own_tx:
+                    self._conn.commit()
+                return revision
+            if created_at:
+                self._conn.execute(
+                    "INSERT INTO asset_revisions(asset_id, revision, payload,"
+                    " patch, reason, author, created_at)"
+                    " VALUES(?,?,?,?,?,?,?)",
+                    (asset_id, revision, payload_json, patch, reason, author,
+                     created_at))
+            else:
+                self._conn.execute(
+                    "INSERT INTO asset_revisions(asset_id, revision, payload,"
+                    " patch, reason, author) VALUES(?,?,?,?,?,?)",
+                    (asset_id, revision, payload_json, patch, reason, author))
+            if own_tx:
+                self._conn.commit()
+            return revision
+        except Exception:
+            if own_tx:
+                self._conn.rollback()
+            raise
 
     def list_world_configs(self) -> list[dict]:
         """全部世界的 {world_id, config(已解析)}（修订 impacted 反查用）。"""
