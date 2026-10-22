@@ -54,28 +54,31 @@ def start() -> int:
               f"先 taskkill 或换 MCP_PORT。", file=sys.stderr)
         return 2
     LOG_DIR.mkdir(exist_ok=True)
-    log = open(LOG_FILE, "a", encoding="utf-8")
-    env = dict(os.environ, PYTHONIOENCODING="utf-8")
-    proc = subprocess.Popen(
-        [sys.executable, str(ROOT / "scripts" / "run_mcp_server.py")],
-        cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.DETACHED_PROCESS
-        | subprocess.CREATE_NO_WINDOW,
-        close_fds=True,
+    err_log = LOG_DIR / "mcp_server.err.log"
+    PID_FILE.unlink(missing_ok=True)  # 防读旧 pid（服务器启动时自写新 pid）
+    # PowerShell Start-Process：真正独立进程 + 隐藏窗口；**不等其退出**
+    # （Start-Process 的重定向会让 powershell 驻留，故 Popen 即发即弃）
+    ps = (
+        f"Start-Process -WindowStyle Hidden "
+        f"-FilePath '{sys.executable}' "
+        f"-ArgumentList 'scripts/run_mcp_server.py' "
+        f"-WorkingDirectory '{ROOT}' "
+        f"-RedirectStandardOutput '{LOG_FILE}' "
+        f"-RedirectStandardError '{err_log}'"
     )
-    PID_FILE.write_text(str(proc.pid))
-    for _ in range(20):
-        if _port_open():
-            print(f"已启动：pid {proc.pid}，http://{HOST}:{PORT}/mcp")
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-Command", ps],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env=dict(os.environ, PYTHONIOENCODING="utf-8"),
+        cwd=ROOT,
+    )
+    for _ in range(24):
+        if _port_open() and _read_pid():
+            print(f"已启动：pid {_read_pid()}，http://{HOST}:{PORT}/mcp")
             print(f"日志：{LOG_FILE}")
             return 0
-        if proc.poll() is not None:
-            print(f"启动失败（exit {proc.returncode}），日志见 {LOG_FILE}",
-                  file=sys.stderr)
-            return 1
         time.sleep(0.5)
-    print("端口 10s 内未就绪，请查日志", file=sys.stderr)
+    print("端口 12s 内未就绪，请查日志", file=sys.stderr)
     return 1
 
 

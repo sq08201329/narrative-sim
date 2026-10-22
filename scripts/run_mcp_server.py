@@ -27,6 +27,11 @@ def main() -> None:
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
+        # 写 pidfile 供 scripts/mcp_service.py 管理（Start-Process 父进程
+        # 不返回子 pid，服务器自己报）
+        pid_dir = ROOT / "logs"
+        pid_dir.mkdir(exist_ok=True)
+        (pid_dir / "mcp_server.pid").write_text(str(os.getpid()))
         print(f"MCP server 启动: {transport} http://{host}:{port}/mcp")
         mcp.run(transport=transport, host=host, port=port)
 
