@@ -311,7 +311,10 @@ def run_world(store: Store, run_id: str, world_id: str,
             raise WorldSnapshotError(f"快照损坏，无法续跑: {e}") from e
         start_tick = snap_tick + 1
 
-    store.create_run(run_id, world_id)
+    # resume=True 且 run 已存在时，事件追加到原 run（同一 run 分段续跑），
+    # 编号仍经 store.max_event_no() 全局连续；run 不存在时照常新建。
+    if not (resume and store.run_exists(run_id)):
+        store.create_run(run_id, world_id)
 
     personas = []
     for cid in character_ids:
