@@ -163,7 +163,7 @@ def test_dst_ahead_rejected(tmp_path):
                          json.dumps(_char(personality="又改一版"),
                                     ensure_ascii=False), None, "本地新修", "x")
         before = _snapshot(dst)
-        with pytest.raises(DstAhead, match="目标库领先"):
+        with pytest.raises(DstAhead, match="内容领先"):
             import_bundle(dst, bundle, backup=False)
         assert _snapshot(dst) == before
     finally:

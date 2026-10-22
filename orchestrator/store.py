@@ -41,6 +41,27 @@ def _canon_json(text: str) -> str:
         return text
 
 
+_IMAGE_REF_FIELD = "reference_images"
+
+
+def _strip_image_refs(asset: dict) -> dict:
+    """当前 payload 不存 reference_images——该字段由 image_generations 派生。"""
+    asset.pop(_IMAGE_REF_FIELD, None)
+    return asset
+
+
+def _strip_image_refs_json(payload_json: str) -> str:
+    """JSON 版本的剥离（不动历史修订行，只用于写入当前 payload 前）。"""
+    try:
+        obj = json.loads(payload_json)
+    except ValueError:
+        return payload_json
+    if isinstance(obj, dict) and _IMAGE_REF_FIELD in obj:
+        obj.pop(_IMAGE_REF_FIELD)
+        return json.dumps(obj, ensure_ascii=False)
+    return payload_json
+
+
 class Store:
     """数据库唯一入口。所有读写经此类，外部不得直接连库。"""
 
@@ -113,11 +134,15 @@ class Store:
 
     def put_revision(self, asset_id: str, payload: str, patch: str | None,
                      reason: str, author: str) -> int:
-        """追加修订版并前移当前指针（payload 为新版完整快照 JSON）。"""
+        """追加修订版并前移当前指针（payload 为新版完整快照 JSON）。
+
+        reference_images 不进修订内容（由 image_generations 派生），写入前剥离。
+        """
         if self._conn.execute(
             "SELECT 1 FROM assets WHERE asset_id=?", (asset_id,),
         ).fetchone() is None:
             raise KeyError(f"资产不存在: {asset_id}")
+        payload = _strip_image_refs_json(payload)
         if self._revision_count(asset_id) == 0:
             current = self.get_asset(asset_id)
             self._insert_revision(asset_id, json.dumps(current,
@@ -149,11 +174,16 @@ class Store:
         return [dict(r) for r in rows]
 
     def get_asset_at_revision(self, asset_id: str, revision: int) -> dict:
-        return json.loads(self.get_revision(asset_id, revision)["payload"])
+        return _strip_image_refs(
+            json.loads(self.get_revision(asset_id, revision)["payload"]))
 
     def set_current_revision(self, asset_id: str, revision: int) -> None:
-        """指针回指并回填该版快照（rollback 原语，历史不删）。"""
-        snap = self.get_revision(asset_id, revision)["payload"]
+        """指针回指并回填该版快照（rollback 原语，历史不删）。
+
+        reference_images 不再进当前 payload（由 image_generations 派生），
+        回填时剥离，避免历史字段复活。
+        """
+        snap = _strip_image_refs_json(self.get_revision(asset_id, revision)["payload"])
         cur = self._conn.execute(
             "UPDATE assets SET payload=?, current_revision=?,"
             " updated_at=datetime('now') WHERE asset_id=?",
@@ -211,6 +241,7 @@ class Store:
         payload = asset.get("payload")
         if not isinstance(payload, dict):
             raise ValueError("导入资产 payload 必须是对象")
+        payload = _strip_image_refs(dict(payload))
         _validate(payload, "asset.schema.json")
         cur = asset.get("current_revision")
         if not isinstance(cur, int) or cur < 0:
@@ -265,6 +296,7 @@ class Store:
             raise ValueError(f"修订号非法: {revision!r}")
         if not isinstance(payload, dict):
             raise ValueError("修订 payload 必须是对象")
+        payload = _strip_image_refs(dict(payload))
         if self._conn.execute(
                 "SELECT 1 FROM assets WHERE asset_id=?", (asset_id,),
         ).fetchone() is None:
@@ -305,6 +337,29 @@ class Store:
                 self._conn.rollback()
             raise
 
+    def reference_images(self, asset_id: str) -> list[str]:
+        """从 image_generations 派生 reference_images（A1 口径）。
+
+        结构沿用既有契约：相对路径字符串数组。排序必须确定：
+        按 (出图时间, sha256, 路径) 升序，再按路径去重（保留最早登记）。
+        """
+        entries = []
+        for gen in self.list_image_generations(asset_id):
+            paths = gen.get("paths") or []
+            hashes = gen.get("sha256") or []
+            for i, path in enumerate(paths):
+                sha = hashes[i] if i < len(hashes) else ""
+                entries.append((gen.get("created_at") or "", sha or "", path))
+        entries.sort()
+        out: list[str] = []
+        seen: set[str] = set()
+        for _, _, path in entries:
+            if path in seen:
+                continue
+            seen.add(path)
+            out.append(path)
+        return out
+
     def list_world_configs(self) -> list[dict]:
         """全部世界的 {world_id, config(已解析)}（修订 impacted 反查用）。"""
         rows = self._conn.execute(
@@ -332,7 +387,11 @@ class Store:
         ).fetchone()
         if row is None:
             raise KeyError(f"资产不存在: {asset_id}")
-        return json.loads(row["payload"])
+        asset = _strip_image_refs(json.loads(row["payload"]))
+        images = self.reference_images(asset_id)
+        if images:
+            asset[_IMAGE_REF_FIELD] = images
+        return asset
 
     def list_assets(self, type: str | None = None) -> list[dict]:
         """按类型列出资产（调研去重用）；type 为 None 时列全部。"""

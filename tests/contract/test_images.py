@@ -89,15 +89,17 @@ def test_generate_full_chain(store):
     assert path.startswith("images/char_a/")
     assert Path(path).read_bytes() == FAKE_PNG
     asset = store.get_asset("char_a")
-    assert asset["reference_images"] == [path]
-    # 修订留痕（011 机制自动升版）
-    assert store.current_revision("char_a") == 1
-    assert r["revision"] == 1
+    assert asset["reference_images"] == [path]      # 由 image_generations 派生
+    # A1：出图不升修订、不改 payload
+    assert store.current_revision("char_a") == 0
+    assert r["revision"] == 0
+    raw = json.loads(store.get_revision("char_a", 0)["payload"])
+    assert "reference_images" not in raw
     # 生成记录
     rec = store.list_image_generations("char_a")[0]
     assert rec["prompt"] == "Song dynasty informer, hemp robe"
     assert rec["provider"] == "mock/image"
-    assert rec["asset_revision"] == 1
+    assert rec["asset_revision"] == 0
     import hashlib
     assert rec["sha256"][0] == hashlib.sha256(FAKE_PNG).hexdigest()
 
