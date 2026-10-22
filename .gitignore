@@ -35,6 +35,7 @@ data-gym-cache/
 pytest-of-Administrator/
 
 # 运行时产物：库备份、服务日志、团队启动脚本
+data/*.bak
 data/*.bak.*
 data/mcp_server.log
 yanyu_server_start.sh
