@@ -169,6 +169,36 @@ def test_resume_corrupt_snapshot_raises(store):
                   ticks=1, backend=MockPersonaBackend(), resume=True)
 
 
+def test_resume_into_existing_run_appends(store):
+    """resume=True + run 已存在：事件追加进同一个 run，编号全局连续、不抛错。"""
+    first = run_world(store, "r1", "w1", ["char_a", "char_b"], "scene_hall",
+                      ticks=1, backend=MockPersonaBackend())
+    assert len(first) == 3  # 1 开场 + 1 tick × 2 角色
+    # 同一个 run_id 续跑：不抛 run_id 已存在，事件落到原 run
+    second = run_world(store, "r1", "w1", ["char_a", "char_b"], "scene_hall",
+                       ticks=1, backend=MockPersonaBackend(), resume=True)
+    assert {e["tick"] for e in second} == {2}
+    all_events = store.export_events("r1")
+    assert len(all_events) == len(first) + len(second)
+    assert {e["run_id"] for e in all_events} == {"r1"}
+    # 编号全局连续、零重复
+    assert [e["event_id"] for e in all_events] == [
+        f"e{i:04d}" for i in range(1, len(all_events) + 1)]
+    # 快照推进到 tick 2
+    assert store.get_world_state("w1")[0] == 2
+
+
+def test_rerun_existing_run_id_without_resume_raises(store):
+    """resume=False + run 已存在：仍抛 run_id 已存在，且不写脏事件。"""
+    run_world(store, "r1", "w1", ["char_a"], "scene_hall",
+              ticks=1, backend=MockPersonaBackend())
+    before = store.export_events("r1")
+    with pytest.raises(ValueError, match="run_id 已存在"):
+        run_world(store, "r1", "w1", ["char_a"], "scene_hall",
+                  ticks=1, backend=MockPersonaBackend())
+    assert store.export_events("r1") == before
+
+
 # ---------- T009：翻译口径与边界 ----------
 
 def test_worldseed_import_boundary():
