@@ -60,7 +60,8 @@ def start() -> int:
         [sys.executable, str(ROOT / "scripts" / "run_mcp_server.py")],
         cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
-        | subprocess.DETACHED_PROCESS,
+        | subprocess.DETACHED_PROCESS
+        | subprocess.CREATE_NO_WINDOW,
         close_fds=True,
     )
     PID_FILE.write_text(str(proc.pid))
