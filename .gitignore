@@ -28,3 +28,4 @@ images/
 handoff/
 logs/
 data/*.db
+tinytroupe.*.log

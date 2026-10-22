@@ -51,6 +51,7 @@ def _register_json_mode_client() -> None:
 class TinyTroupeBackend(PersonaBackend):
     def __init__(self, person_cls=None, max_retries: int = MAX_ACT_RETRIES):
         load_dotenv()
+        self._redirect_tinytroupe_log()
         self._bridge_deepseek_env()
         for var in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
             if not os.environ.get(var):
@@ -79,6 +80,22 @@ class TinyTroupeBackend(PersonaBackend):
         else:
             self.semantic_mode = f"degraded: {reason}"
             logger.warning("语义记忆降级为本地列表：%s", reason)
+
+    @staticmethod
+    def _redirect_tinytroupe_log() -> None:
+        """TinyTroupe 默认把日志写到 cwd（Path.cwd()/tinytroupe.<ts>.log）——
+        重定向到项目 logs/，避免根目录堆积（数据文件管理）。"""
+        try:
+            from datetime import datetime
+            from pathlib import Path
+            from tinytroupe.utils import config as _tt_cfg
+            if _tt_cfg._log_file_path is None:
+                log_dir = Path(__file__).resolve().parent.parent / "logs"
+                log_dir.mkdir(exist_ok=True)
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                _tt_cfg._log_file_path = log_dir / f"tinytroupe.{ts}.log"
+        except Exception:
+            pass  # 日志重定向失败不阻塞后端
 
     @staticmethod
     def _bridge_deepseek_env() -> None:
