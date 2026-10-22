@@ -1,18 +1,22 @@
 <#
 .SYNOPSIS
-    一键起停 narrative-sim 技术栈：调研服务 gptr-mcp + 叙事服务 narrative-sim。
+    一键起停 narrative-sim 技术栈：嵌入服务 + 调研服务 + 叙事服务。
 
 .DESCRIPTION
     固定顺序，顺序不反：
-      1) gptr-mcp（调研服务，127.0.0.1:8000/mcp）—— 先起，健康检查通过
-      2) narrative-sim（叙事服务，127.0.0.1:8300/mcp）—— 后起
+      1) embeddinggemma-2（嵌入服务，127.0.0.1:9379/v1）—— 先起，/v1/models 可用
+      2) gptr-mcp（调研服务，127.0.0.1:8000/mcp）—— 次起，/health 通过
+      3) narrative-sim（叙事服务，127.0.0.1:8300/mcp）—— 最后起
+
+    停的顺序相反：先停叙事，再停调研，最后停嵌入。
 
     约定（踩过的坑都写死在这里）：
       - narrative-sim 必须显式带 NARRATIVE_DB，默认 data\yanyu.db（真库）；
         默认的 data\narrative_sim.db 是测试库，裸起会掉进去。
       - DEEPSEEK_API_KEY 从 narrative-sim\.env 读取，只注入子进程环境，绝不打印。
       - gptr-mcp 目录没有 .env，全靠启动环境变量。
-      - 两个服务都用 Start-Process 起独立进程，不依赖当前 shell，shell 关了它们还在。
+      - 嵌入服务靠 litert-lm serve；模型 eg2-text-270m.litertlm 未导入时先导入。
+      - 三个服务都用 Start-Process 起独立进程，shell 关了它们还在。
       - 已在线则跳过，可反复执行（幂等）。
 
 .PARAMETER Action
@@ -37,17 +41,21 @@ param(
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-$Root          = Split-Path -Parent $PSScriptRoot
-$GptrRoot      = 'D:\kimicode_repos\projects\my-gpt-research\gptr-mcp'
-$GptrPort      = 8000
-$NarrativePort = 8300
+$Root            = Split-Path -Parent $PSScriptRoot
+$GptrRoot        = 'D:\kimicode_repos\projects\my-gpt-research\gptr-mcp'
+$EmbedRoot       = 'D:\gh_projects\embeddinggemma-2'
+$EmbedPort       = 9379
+$EmbedModel      = 'eg2-text-270m.litertlm'
+$GptrPort        = 8000
+$NarrativePort   = 8300
 $NarrativePython = Join-Path $Root '.venv\Scripts\python.exe'
-$GptrPython    = Join-Path $GptrRoot '.venv\Scripts\python.exe'
-$GptrLogDir    = Join-Path $GptrRoot 'logs'
+$GptrPython      = Join-Path $GptrRoot '.venv\Scripts\python.exe'
+$GptrLogDir      = Join-Path $GptrRoot 'logs'
+$EmbedLogDir     = Join-Path $EmbedRoot 'logs'
 
 if (-not $DbPath) {
     $envDb = $env:NARRATIVE_DB
-    $DbPath = if ($envDb) { $envDb } else { Join-Path $Root 'data\yanyu.db' }
+    $DbPath = if ($envDb) { $envDb } else { Join-Path $Root 'data\projects\linan.db' }
 }
 
 # ---------- 基础设施 ----------
@@ -59,16 +67,16 @@ function Get-ListenerPid([int]$Port) {
     return $null
 }
 
-function Test-Health([string]$Url) {
+function Test-Http([string]$Url) {
     try {
         $r = Invoke-WebRequest -Uri $Url -TimeoutSec 5 -UseBasicParsing
         return ($r.StatusCode -eq 200)
     } catch { return $false }
 }
 
-function Wait-Health([string]$Url, [int]$Seconds = 30) {
+function Wait-Http([string]$Url, [int]$Seconds = 40) {
     for ($i = 0; $i -lt $Seconds; $i++) {
-        if (Test-Health $Url) { return $true }
+        if (Test-Http $Url) { return $true }
         Start-Sleep -Seconds 1
     }
     return $false
@@ -86,7 +94,80 @@ function Get-DeepSeekKey {
     return $key
 }
 
-# ---------- gptr-mcp ----------
+# ---------- 1) 嵌入服务 ----------
+
+function Get-EmbedStatus {
+    $pid0 = Get-ListenerPid $EmbedPort
+    [pscustomobject]@{
+        Name   = 'embedding'
+        Port   = $EmbedPort
+        Pid    = $pid0
+        Online = [bool]($pid0 -and (Test-Http "http://127.0.0.1:$EmbedPort/v1/models"))
+    }
+}
+
+function Start-Embed {
+    $st = Get-EmbedStatus
+    if ($st.Online) {
+        Write-Host "[embedding] 已在线（pid $($st.Pid)），跳过"
+        return $true
+    }
+    if ($st.Pid) {
+        Write-Host "[embedding] 端口 $EmbedPort 被 pid $($st.Pid) 占用但 /v1/models 不通，先停掉重起"
+        Stop-Embed | Out-Null
+        Start-Sleep -Seconds 2
+    }
+    $litert = (Get-Command litert-lm -ErrorAction SilentlyContinue)
+    if (-not $litert) { throw 'PATH 里找不到 litert-lm' }
+    $litertPath = $litert.Source
+
+    $imported = & $litertPath list 2>&1 | Select-String $EmbedModel
+    if (-not $imported) {
+        Write-Host "[embedding] 模型未导入，先导入 $EmbedModel ..."
+        $modelFile = Join-Path $EmbedRoot 'model.litertlm'
+        & $litertPath import $modelFile $EmbedModel | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "模型导入失败：$modelFile" }
+    }
+
+    New-Item -ItemType Directory -Force -Path $EmbedLogDir | Out-Null
+    $outLog = Join-Path $EmbedLogDir 'embedding_server.log'
+    $errLog = Join-Path $EmbedLogDir 'embedding_server.err.log'
+
+    Write-Host "[embedding] 启动中（$EmbedModel @ $EmbedPort）..."
+    $p = Start-Process -WindowStyle Hidden -FilePath $litertPath `
+         -ArgumentList @('serve', '--host', '127.0.0.1', '--port', "$EmbedPort") `
+         -WorkingDirectory $EmbedRoot `
+         -RedirectStandardOutput $outLog -RedirectStandardError $errLog `
+         -PassThru
+    Set-Content -Path (Join-Path $EmbedLogDir 'embedding.pid') -Value $p.Id -Encoding ascii
+
+    if (Wait-Http "http://127.0.0.1:$EmbedPort/v1/models" 40) {
+        $lp = Get-ListenerPid $EmbedPort
+        Write-Host "[embedding] 就绪：http://127.0.0.1:$EmbedPort/v1（pid $lp）"
+        return $true
+    }
+    Write-Host "[embedding] 40s 内 /v1/models 未就绪，看日志：$errLog" -ForegroundColor Red
+    return $false
+}
+
+function Stop-Embed {
+    $pid0 = Get-ListenerPid $EmbedPort
+    if (-not $pid0) {
+        Remove-Item (Join-Path $EmbedLogDir 'embedding.pid') -ErrorAction SilentlyContinue
+        Write-Host '[embedding] 未在运行'
+        return
+    }
+    $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$pid0"
+    if (-not $proc -or $proc.CommandLine -notmatch 'litert-lm') {
+        Write-Host "[embedding] pid $pid0 命令行不像 litert-lm，拒绝停止" -ForegroundColor Red
+        return
+    }
+    Stop-Process -Id $pid0 -Force
+    Remove-Item (Join-Path $EmbedLogDir 'embedding.pid') -ErrorAction SilentlyContinue
+    Write-Host "[embedding] 已停止 pid $pid0"
+}
+
+# ---------- 2) 调研服务 gptr-mcp ----------
 
 function Get-GptrStatus {
     $pid0 = Get-ListenerPid $GptrPort
@@ -94,7 +175,7 @@ function Get-GptrStatus {
         Name   = 'gptr-mcp'
         Port   = $GptrPort
         Pid    = $pid0
-        Online = [bool]($pid0 -and (Test-Health "http://127.0.0.1:$GptrPort/health"))
+        Online = [bool]($pid0 -and (Test-Http "http://127.0.0.1:$GptrPort/health"))
     }
 }
 
@@ -134,7 +215,7 @@ function Start-Gptr {
          -PassThru
     Set-Content -Path (Join-Path $GptrLogDir 'gptr.pid') -Value $p.Id -Encoding ascii
 
-    if (Wait-Health "http://127.0.0.1:$GptrPort/health" 40) {
+    if (Wait-Http "http://127.0.0.1:$GptrPort/health" 40) {
         $lp = Get-ListenerPid $GptrPort
         Write-Host "[gptr-mcp] 就绪：http://127.0.0.1:$GptrPort/mcp（pid $lp）"
         return $true
@@ -160,7 +241,7 @@ function Stop-Gptr {
     Write-Host "[gptr-mcp] 已停止 pid $pid0"
 }
 
-# ---------- narrative-sim ----------
+# ---------- 3) 叙事服务 narrative-sim ----------
 
 function Get-NarrativeStatus {
     $pid0 = Get-ListenerPid $NarrativePort
@@ -205,37 +286,42 @@ function Start-Narrative {
 
 switch ($Action) {
     'status' {
+        $e = Get-EmbedStatus
         $g = Get-GptrStatus
         $n = Get-NarrativeStatus
-        foreach ($s in @($g, $n)) {
+        foreach ($s in @($e, $g, $n)) {
             $state = if ($s.Online) { "在线 pid $($s.Pid)" } else { '离线' }
             Write-Host ("{0,-14} :{1}  {2}" -f $s.Name, $s.Port, $state)
         }
-        if ($g.Online -and $n.Online) { exit 0 } else { exit 1 }
+        if ($e.Online -and $g.Online -and $n.Online) { exit 0 } else { exit 1 }
     }
     'start' {
-        $okG = Start-Gptr
-        if (-not $okG) {
+        if (-not (Start-Embed)) {
+            Write-Host '嵌入服务没起来，后面的不启动（顺序不反）' -ForegroundColor Red
+            exit 1
+        }
+        if (-not (Start-Gptr)) {
             Write-Host '调研服务没起来，叙事服务不启动（顺序不反）' -ForegroundColor Red
             exit 1
         }
-        $okN = Start-Narrative
-        if ($okN) { Write-Host '技术栈就绪。' -ForegroundColor Green; exit 0 }
+        if (Start-Narrative) { Write-Host '技术栈就绪。' -ForegroundColor Green; exit 0 }
         exit 1
     }
     'stop' {
         Invoke-NarrativeService 'stop' | Out-Null
         Write-Host '[narrative-sim] 已停止'
         Stop-Gptr
+        Stop-Embed
         exit 0
     }
     'restart' {
         Invoke-NarrativeService 'stop' | Out-Null
         Write-Host '[narrative-sim] 已停止'
         Stop-Gptr
+        Stop-Embed
         Start-Sleep -Seconds 2
-        $okG = Start-Gptr
-        if (-not $okG) { Write-Host '调研服务没起来，叙事服务不启动' -ForegroundColor Red; exit 1 }
+        if (-not (Start-Embed)) { Write-Host '嵌入服务没起来，后面的不启动' -ForegroundColor Red; exit 1 }
+        if (-not (Start-Gptr)) { Write-Host '调研服务没起来，叙事服务不启动' -ForegroundColor Red; exit 1 }
         if (Start-Narrative) { Write-Host '技术栈就绪。' -ForegroundColor Green; exit 0 }
         exit 1
     }
