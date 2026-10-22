@@ -118,16 +118,12 @@ def generate_reference_images(store: Store, asset_id: str,
         paths.append(f"images/{asset_id}/{fname}")
         hashes.append(digest)
 
-    # 最后改库：reference_images 追加（put_asset 自动升版留痕）
-    existing = list(asset.get("reference_images") or [])
-    for p in paths:
-        if p not in existing:
-            existing.append(p)
-    asset["reference_images"] = existing
-    store.put_asset(asset)
+    # 最后改库：只登记出图记录，**不碰资产 payload、不升修订**（A1）。
+    # reference_images 由 Store.reference_images() 从 image_generations 派生。
     revision = store.current_revision(asset_id)
     store.put_image_generation(asset_id, prompt, len(paths), ratio,
                                paths, hashes, provider.name, revision)
     return {"asset_id": asset_id, "paths": paths, "sha256": hashes,
             "revision": revision, "prompt": prompt, "n": len(paths),
-            "aspect_ratio": ratio, "provider": provider.name}
+            "aspect_ratio": ratio, "provider": provider.name,
+            "reference_images": store.reference_images(asset_id)}

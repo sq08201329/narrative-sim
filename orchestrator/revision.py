@@ -70,6 +70,11 @@ def revise(store: Store, asset_id: str, patch: dict, reason: str,
 
     merged = _merge_patch(current, patch)
     merged["asset_id"] = asset_id
+    ref_note = None
+    if "reference_images" in patch:
+        ref_note = ("reference_images 由出图派生（image_generations），"
+                    "本次修订忽略该字段")
+    merged.pop("reference_images", None)
     payload = json.dumps(merged, ensure_ascii=False)
     new_rev = store.put_revision(
         asset_id, payload,
@@ -81,6 +86,8 @@ def revise(store: Store, asset_id: str, patch: dict, reason: str,
         worlds = "、".join(i["world_id"] for i in impacted)
         warning = (f"资产已被世界引用（{worlds}），其 run 使用的是冻结版卡；"
                    f"修订不影响历史，重拍或新建世界才会用新版")
+    if ref_note:
+        warning = f"{warning}；{ref_note}" if warning else ref_note
     return {"asset_id": asset_id, "revision": new_rev,
             "impacted": impacted, "warning": warning}
 
