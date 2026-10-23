@@ -660,7 +660,8 @@ def test_generate_reference_image_via_mcp(mcp, monkeypatch, tmp_path):
     class FakeProvider:
         name = "mock/image"
 
-        def generate(self, prompt, n, aspect_ratio):
+        def generate(self, prompt, n, aspect_ratio,
+                     subject_reference=None, seed=None):
             return [b"\x89PNG\r\n\x1a\n" + b"\x00" * 8]
 
     monkeypatch.setattr(images_mod, "MinimaxImageProvider",
@@ -675,3 +676,25 @@ def test_generate_reference_image_via_mcp(mcp, monkeypatch, tmp_path):
 
     with pytest.raises(ToolError, match="AssetNotFound"):
         call(mcp, "generate_reference_image", {"asset_id": "ghost"})
+
+
+def test_generate_reference_image_passes_i2i_params(mcp, monkeypatch):
+    """014：MCP 工具把 subject_reference / seed 透传给 images 层。"""
+    import orchestrator.images as images_mod
+    seen = {}
+
+    def fake(store, asset_id, **kw):
+        seen.update(kw)
+        seen["asset_id"] = asset_id
+        return {"asset_id": asset_id, "paths": [],
+                "seed": kw.get("seed"), "used_reference": True}
+
+    monkeypatch.setattr(images_mod, "generate_reference_images", fake)
+    r = call(mcp, "generate_reference_image", {
+        "asset_id": "char_a", "subject_reference": "C:/tmp/ref.jpg",
+        "seed": 11, "n": 2})
+    assert seen["asset_id"] == "char_a"
+    assert seen["subject_reference"] == "C:/tmp/ref.jpg"
+    assert seen["seed"] == 11
+    assert seen["n"] == 2
+    assert r.data["used_reference"] is True

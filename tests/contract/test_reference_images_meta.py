@@ -90,7 +90,8 @@ def test_generate_reference_images_does_not_bump_revision(tmp_path, monkeypatch)
     class FakeProvider:
         name = "mock/image"
 
-        def generate(self, prompt, n, aspect_ratio):
+        def generate(self, prompt, n, aspect_ratio,
+                     subject_reference=None, seed=None):
             return [b"\x89PNG\r\n\x1a\n" + b"\x00" * 8]
 
     monkeypatch.chdir(tmp_path)  # images/ 落临时目录
