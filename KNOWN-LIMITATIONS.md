@@ -52,3 +52,10 @@
 - **症状**：`asset_port export/import` 只搬 `assets` / `asset_revisions` / `research_materials` 三张表，不搬 `image_generations`。
 - **影响**：资产从主库导到项目库时，参考图记录不会跟着走；项目库的参考图需在项目侧生成/登记。
 - **绕过**：把出图当作项目库本地产物（与路径、环境相关）；需要图时在目标库重新出图；`verify` 会把图片差异单列在 `images` 段，不当失败。
+
+## 9. 外部不可安装（内部版本）
+
+- **症状**：依赖 `worldseed[dm]` 来自本机 path（`pyproject.toml`：`worldseed = { path = "D:/kimicode_repos/projects/my_mas/WorldSeed", editable = true }`），且该工作副本带 3 行本地编码补丁（见 `docs/worldseed-local-patch/`）。裸 `pip install narrative-sim` / 干净 runner 无法解析这个 path，装不上。
+- **影响**：本项目当前**只能在具备 `my_mas/WorldSeed` 目录并打过该补丁的机器上安装运行**；PyPI 上的 `worldseed` 是**另一个发行版**（0.0.1，只有 `gui` extra，没有 `dm`），**不能替代**。对外发布/协作复现会被卡住；CI 也因此暂不可用。
+- **绕过**：复制整个 `my_mas/WorldSeed` 工作副本（含未跟踪的本地文件），按 `docs/worldseed-local-patch/README.md` 打 `locale-encoding.patch`，再在本机 `uv sync`；验证方式是离线测试 `225 passed, 1 deselected`。不要改依赖来源、不要 vendor、不要指到 PyPI 的 `worldseed`。
+- **性质**：这是**内部版本**（0.2.0）的既定限制，不是待修 bug；若要对外发布，必须先单独设计 `worldseed` 的可分发来源（独立报批）。
