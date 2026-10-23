@@ -41,7 +41,8 @@ class MockImageProvider:
         self._payloads = payloads or [FAKE_PNG]
         self._fail = fail_with
 
-    def generate(self, prompt, n, aspect_ratio):
+    def generate(self, prompt, n, aspect_ratio,
+                 subject_reference=None, seed=None):
         self.calls.append({"prompt": prompt, "n": n,
                            "aspect_ratio": aspect_ratio})
         if self._fail:

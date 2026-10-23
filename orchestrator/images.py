@@ -8,6 +8,7 @@
 """
 import base64
 import hashlib
+import mimetypes
 import os
 from pathlib import Path
 from typing import Protocol
@@ -29,22 +30,61 @@ class ImageGenError(RuntimeError):
 class ImageProvider(Protocol):
     name: str
 
-    def generate(self, prompt: str, n: int,
-                 aspect_ratio: str) -> list[bytes]:
-        """返回 n 张 PNG 字节；任何失败抛 ImageGenError，不返回部分结果。"""
+    def generate(self, prompt: str, n: int, aspect_ratio: str,
+                 subject_reference: str | None = None,
+                 seed: int | None = None) -> list[bytes]:
+        """返回 n 张 PNG 字节；任何失败抛 ImageGenError，不返回部分结果。
+
+        subject_reference 传**已转换的 data URL**（由 _to_data_url 生成）；
+        seed 为 None 表示不指定。
+        """
         ...
 
 
+_REF_MAX_BYTES = 10 * 1024 * 1024
+# 魔数优先：图被改过名也不影响判型
+_MAGIC_MIME = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+)
+
+
+def _to_data_url(ref: str) -> str:
+    """主体参考图 → data URL（MiniMax image_file 接受 URL 或 base64 data URL）。
+
+    - 已是 `data:` 开头则原样透传；
+    - 文件不存在 / 超 10MB / 非 JPG-PNG 一律 ImageGenError；
+    - 判型以**文件魔数**为准，扩展名只作 fallback；
+    - 错误消息只回显路径，**绝不回显图片内容**。
+    """
+    if ref.startswith("data:"):
+        return ref
+    path = Path(ref)
+    if not path.is_file():
+        raise ImageGenError(f"参考图不存在：{ref}")
+    raw = path.read_bytes()
+    if len(raw) > _REF_MAX_BYTES:
+        raise ImageGenError(f"参考图超过 10MB 上限：{ref}")
+    mime = next((m for magic, m in _MAGIC_MIME if raw.startswith(magic)), None)
+    if mime is None:
+        mime = mimetypes.guess_type(path.name)[0]
+    if mime not in ("image/jpeg", "image/png"):
+        raise ImageGenError(
+            f"参考图格式不支持（只收 JPG/PNG）：{ref}")
+    return f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+
+
 class MinimaxImageProvider:
-    """MiniMax image-01 文生图（POST /v1/image_generation）。"""
+    """MiniMax image-01 文生图 / 图生图（POST /v1/image_generation）。"""
 
     name = "minimax/image-01"
 
-    def __init__(self, timeout: float = 120.0):
+    def __init__(self, timeout: float = 180.0):
         self._timeout = timeout
 
-    def generate(self, prompt: str, n: int,
-                 aspect_ratio: str) -> list[bytes]:
+    def generate(self, prompt: str, n: int, aspect_ratio: str,
+                 subject_reference: str | None = None,
+                 seed: int | None = None) -> list[bytes]:
         import httpx
 
         api_key = os.environ.get("MINIMAX_API_KEY")
@@ -53,14 +93,26 @@ class MinimaxImageProvider:
                 "缺少环境变量 MINIMAX_API_KEY：请在 .env 中配置（013）")
         base = os.environ.get("MINIMAX_BASE_URL",
                               "https://api.minimaxi.com")
+        payload = {"model": "image-01", "prompt": prompt,
+                   "aspect_ratio": aspect_ratio, "n": n,
+                   "response_format": "base64"}
+        if subject_reference:
+            # 官方：单张、type 只收 character、只锁主体长相，不锁服装/构图
+            payload["subject_reference"] = [
+                {"type": "character", "image_file": subject_reference}]
+        if seed is not None:
+            payload["seed"] = int(seed)
         resp = httpx.post(
             f"{base}/v1/image_generation",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": "image-01", "prompt": prompt,
-                  "aspect_ratio": aspect_ratio, "n": n,
-                  "response_format": "base64"},
+            json=payload,
             timeout=self._timeout,
         )
+        if not (200 <= resp.status_code < 300):
+            # 413（请求体过大）/ 401（鉴权）等直接给出状态码与截断正文；
+            # 不回显 payload（含 data URL）与 key。
+            raise ImageGenError(
+                f"图源 HTTP {resp.status_code}：{(resp.text or '')[:200]}")
         try:
             body = resp.json()
         except ValueError as e:
@@ -88,8 +140,15 @@ def generate_reference_images(store: Store, asset_id: str,
                               n: int = 1,
                               aspect_ratio: str | None = None,
                               prompt_override: str | None = None,
-                              provider: ImageProvider | None = None) -> dict:
-    """单资产参考图生成（原子化：失败零文件零字段零记录）。"""
+                              provider: ImageProvider | None = None,
+                              subject_reference: str | None = None,
+                              seed: int | None = None) -> dict:
+    """单资产参考图生成（原子化：失败零文件零字段零记录）。
+
+    subject_reference：本地图片路径或 data URL，锁主体长相（单张 JPG/PNG
+    ≤10MB）；在调用 provider **之前**完成校验与转换，非法参考图不会发出请求。
+    seed：同参数可复现。两者默认 None，行为与改动前一致。
+    """
     asset = store.get_asset(asset_id)  # KeyError 上抛
     prompt = (prompt_override
               or (asset.get("appearance") or {}).get("visual_prompt")
@@ -99,9 +158,12 @@ def generate_reference_images(store: Store, asset_id: str,
             f"BadPrompt: 资产 {asset_id} 无 visual_prompt 且未给 override")
     ratio = aspect_ratio or _DEFAULT_RATIO.get(asset["type"], "1:1")
     provider = provider or MinimaxImageProvider()
+    # 先校验并转换参考图：错误在发起任何请求之前抛出（零计费）
+    ref_data_url = _to_data_url(subject_reference) if subject_reference else None
 
     # R4 次序：先拿字节
-    payloads = provider.generate(prompt, n, ratio)
+    payloads = provider.generate(prompt, n, ratio,
+                                 subject_reference=ref_data_url, seed=seed)
     if not payloads or any(not p for p in payloads):
         raise ImageGenError("图源返回空图片")
 
@@ -126,4 +188,5 @@ def generate_reference_images(store: Store, asset_id: str,
     return {"asset_id": asset_id, "paths": paths, "sha256": hashes,
             "revision": revision, "prompt": prompt, "n": len(paths),
             "aspect_ratio": ratio, "provider": provider.name,
-            "reference_images": store.reference_images(asset_id)}
+            "reference_images": store.reference_images(asset_id),
+            "seed": seed, "used_reference": bool(ref_data_url)}
