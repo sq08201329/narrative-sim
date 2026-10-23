@@ -1,0 +1,35 @@
+diff --git a/src/worldseed/dm/prompt.py b/src/worldseed/dm/prompt.py
+index 01d0b9b..d4b07b9 100644
+--- a/src/worldseed/dm/prompt.py
++++ b/src/worldseed/dm/prompt.py
+@@ -144,7 +144,7 @@ Never translate, transliterate, or romanize them.
+ 
+ 
+ _LANG_NAMES: dict[str, str] = json.loads(
+-    (Path(__file__).resolve().parents[3] / "shared" / "languages.json").read_text()
++    (Path(__file__).resolve().parents[3] / "shared" / "languages.json").read_text(encoding="utf-8")
+ )
+ 
+ 
+diff --git a/src/worldseed/scene/config.py b/src/worldseed/scene/config.py
+index a88c4e1..46f7f0c 100644
+--- a/src/worldseed/scene/config.py
++++ b/src/worldseed/scene/config.py
+@@ -24,7 +24,7 @@ def load_config(path: str | Path) -> SceneConfig:
+     are loaded from a ``presets/`` directory and deep-merged before validation.
+     """
+     path = Path(path)
+-    with path.open() as f:
++    with path.open(encoding="utf-8") as f:
+         raw = yaml.safe_load(f)
+     raw = _resolve_presets(raw, path)
+     return SceneConfig.model_validate(raw)
+@@ -52,7 +52,7 @@ def _resolve_presets(raw: dict[str, Any], config_path: Path, _seen: set[str] | N
+         _seen.add(name)
+ 
+         preset_path = _find_preset(name, config_path)
+-        with preset_path.open() as f:
++        with preset_path.open(encoding="utf-8") as f:
+             preset_raw = yaml.safe_load(f) or {}
+ 
+         # Recursively resolve nested use: in presets
