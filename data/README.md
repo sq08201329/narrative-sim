@@ -32,6 +32,7 @@ pwsh -File scripts\start_stack.ps1 restart
 - **不要再手工拼环境变量起 `run_mcp_server.py`**。
 - 端点：embedding `http://127.0.0.1:9379/v1`、gptr-mcp `http://127.0.0.1:8000/mcp`、narrative-sim `http://127.0.0.1:8300/mcp`（22 个工具）。
 - 工具数仍用 `scripts\mcp_service.py status` 看（`start_stack.ps1 status` 只看端口与健康检查）。
+- **启动脚本在后台跑时别杀启动壳**：`start_stack.ps1 start` 的后台进程壳被杀会带走整个进程树、三服务一起掉；只等端口就绪（9379 / 8000 / 8300）即可。
 
 ## 三、跨库搬运：scripts\asset_port.py
 
@@ -47,11 +48,20 @@ python scripts\asset_port.py verify --db data\projects\linan.db --file <bundle.j
 - 导入只碰 `assets` / `asset_revisions` / `research_materials` 三张表；导入前默认自动备份目标库。
 - **不许手工 `Copy-Item` 库文件**——那样会丢原料和 provenance（资产能复制，原料不跟着走）。
 
-## 四、归档库
+## 四、归档目录：data/_legacy/
 
-- `data/yanyu.db`：**已归档**，历史数据留档，**不要再往它写**。
-- `data/yanyu.db.pre_migration.bak`：迁到「主库 + 项目库」之前的备份。
-- `data/yanyu.db.bak.<时间戳>`：更早的历史备份，同样只读。
+旧验收/冒烟库、旧真库 `yanyu.db` 及其迁移备份，全部移入 `data/_legacy/`，**只读、不删**：
+
+- `narrative_sim.db`（历史默认测试库）
+- `yanyu.db` + `yanyu.db.pre_migration.bak` + `yanyu.db.bak.<时间戳>`
+- `world_talk.db` / `world_real.db` / `world_mock.db`
+- `dm_accept.db` / `dm_fault.db`
+- `research005.db` / `research_accept.db` / `m1_check.db`
+
+逐库说明（是什么、什么时候的、为什么归档）见 `data/_legacy/README.md`。
+
+- `yanyu.db` 已归档，**不要再往它写**。
+- 需要恢复某个历史库：复制到 `data/` 之外再操作，不要就地改。
 
 ## 五、.env 键名（只列名，不写值）
 
@@ -73,20 +83,13 @@ python scripts\asset_port.py verify --db data\projects\linan.db --file <bundle.j
 
 > 将来若要把备注进库（`research_materials` 加 `verdict` / `note` 列），属于 schema 迁移，需单独报批、单独分支，不在文档改动里夹带。
 
-## 七、演示 / 验收库（历史产物）
+## 七、历史测试库（已归档）
 
-以下为历史验收与冒烟产物，仅作留档，不再作为生产线使用：
+曾经的「演示/验收库」已全部移入 `data/_legacy/`，本目录不再保留：
 
-| 文件 | 来源特性 | 内容 |
-|------|----------|------|
-| `world_talk.db` | 008/012 | 沈刻×苏晚晴对手戏 run talk_r1（14 事件真对白）+ 第二幕 talk_r2（带幕间记忆）+ llm 记忆 2 条 |
-| `dm_accept.db` | 010 验收 | DM 裁决 run（dm_r1 真后端 / dm_r3 mock+真裁决 4 调用） |
-| `dm_fault.db` | 010 验收 | 裁决服务故障注入 run（降级 100% 完成证据） |
-| `world_real.db` | 006 验收 | WorldSeed 引擎真机 run（9 事件） |
-| `world_mock.db` | 006 冒烟 | mock 后端世界链路 |
-| `research005.db` / `research_accept.db` | 004/005 验收 | 调研管线资产 |
-| `m1_check.db` | 001 验收 | 最小链路 |
-| `narrative_sim.db` | 默认工作库 | MCP server 与 CLI 的缺省库；**是测试库，不是生产线库** |
+- 归档说明与逐库清单：`data/_legacy/README.md`（**只读**；要恢复请复制出去再操作）。
+- `narrative_sim.db` 是历史的默认测试库，**已归档**，不再是默认工作库。
+- 运维注意：`orchestrator/mcp_server.py` 的缺省库路径仍是 `data/narrative_sim.db`——**裸起**服务（不带 `NARRATIVE_DB`）会新建一个空测试库，不是生产线库。起服务一律用 `scripts\start_stack.ps1`（自动带项目库 `data/projects/linan.db`）。
 
 ## 八、其他本地产物
 
