@@ -28,6 +28,7 @@
 - **症状**：工具调用有客户端请求超时（实践约 60 秒）；超时后调用方拿不到结果，服务端行为不一致（可能继续跑完，也可能中断）。
 - **影响**：单次调用无法可靠承载分钟级操作（真实调研、多 tick 仿真、整包导出+搬运）。
 - **绕过**：分钟级操作一律走 CLI（`scripts/research_asset.py`、CLI runner 直调 `orchestrator.world.run_world`），不靠 MCP 工具调用；超时后先 `get_world_state` / `get_events` 核对服务端实际进度，不盲目重跑。
+- **出图相关**：MCP 客户端每次调用有 **60 秒硬上限**（`toolCallTimeoutMs=60000`，用户已定不改）。当前参考图 190–420KB、base64 后 <600KB，60 秒足够；image provider 侧的超时（180s）只是**服务端等待上限，不能替代客户端 60 秒上限**——大图/慢网仍要靠 CLI 出图，别把「放宽服务端超时」当成解法。
 
 ## 5. `research_materials` 没有判定列（verdict / note）
 
