@@ -153,4 +153,4 @@ US2/US3 增量收口；T013 顺带关闭 004 遗留 T017。
 
 ## Phase 7: Convergence
 
-- [ ] T016 360search 限流恢复后，以 `RETRIEVER=searx` 重启 gptr-mcp 并跑通一次调研，验证 searx 腿在 005 插件安装后仍正常（US2/AC1 的 searx 侧 live 验证） per US2/AC1 (partial)
+- [ ] T016 360search 限流恢复后，以 `RETRIEVER=searx` 重启 gptr-mcp 并跑通一次调研，验证 searx 腿在 005 插件安装后仍正常（US2/AC1 的 searx 侧 live 验证） per US2/AC1 (partial) —— **依赖外部条件**：searx/360search 检索腿可用；当前 `RETRIEVER=deepseek`，插件安装正确性已由离线用例覆盖。

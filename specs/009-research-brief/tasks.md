@@ -13,7 +13,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 1: Setup
 
-- [ ] T001 [P] `.env.example` 增加键位（含注释）：`BRIEF_MAX_ITEMS`（12）、
+- [x] T001 [P] `.env.example` 增加键位（含注释）：`BRIEF_MAX_ITEMS`（12）、
   `RESEARCH_SKIP_THRESHOLD`（0.88）、`RESEARCH_ATTACH_THRESHOLD`（0.80）、
   `RESEARCH_MATERIAL_MAX_CHARS`（8000）
 
@@ -21,12 +21,12 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 2: Foundational（原料表，阻塞所有故事）
 
-- [ ] T002 `db/init_db.py` 增加 `research_materials` 幂等 DDL（表结构见
+- [x] T002 `db/init_db.py` 增加 `research_materials` 幂等 DDL（表结构见
   data-model.md，含 asset_id/query 两索引）；`orchestrator/store.py` 增加
   `put_material(asset_id, query, retriever, context) -> int` /
   `get_materials(asset_id) -> list[dict]` /
   `get_material_by_query(query) -> dict | None`（取最新一条）
-- [ ] T003 原料表离线测试（真实 SQLite tmp 库）：写读往返 / 同资产多条追加 /
+- [x] T003 原料表离线测试（真实 SQLite tmp 库）：写读往返 / 同资产多条追加 /
   按查询取最新 / 无记录返回 None
 
 **Checkpoint**: 原料表读写就绪，既有 111 项回归绿
@@ -42,22 +42,22 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 1（先写，确认失败）
 
-- [ ] T004 [US1] 新建 `tests/contract/test_research_brief.py`（mock chat_json
+- [x] T004 [US1] 新建 `tests/contract/test_research_brief.py`（mock chat_json
   与 research 接缝）：清单生成（三类齐全/含 query 与 asset_type/闸门截断/
   漂移重试/空题材拒绝）；批量执行（资产类调 research_asset、素材类调
   research_material、单条失败不阻断、总账状态正确）
 
 ### Implementation for User Story 1
 
-- [ ] T005 [US1] 实现 `orchestrator/brief.py`：`generate_brief(theme)`
+- [x] T005 [US1] 实现 `orchestrator/brief.py`：`generate_brief(theme)`
   （chat_json 拆解 → 三类校验 → `BRIEF_MAX_ITEMS` 闸门）与
   `execute_brief(brief, store)`（逐条分流执行 + 单条容错 + 总账）
-- [ ] T006 [US1] `orchestrator/research.py` 增加
+- [x] T006 [US1] `orchestrator/research.py` 增加
   `research_material(query, store, *, link_asset_id=None, call_tool=None)`
   （deep_research 取 context → 截断 `RESEARCH_MATERIAL_MAX_CHARS` →
   put_material；link 未给时经库内匹配挂载，再不沾挂 `lore:<slug>`）；
   `research_asset()` 内嵌原料持久化（成功对新资产、去重命中对已有资产均追加）
-- [ ] T007 [US1] 实现 `scripts/research_brief.py` CLI：
+- [x] T007 [US1] 实现 `scripts/research_brief.py` CLI：
   `--theme X --out FILE`（只生成）/ `--execute FILE [--db]`（批量执行并
   打印总账）；`tests/contract/test_research_pipeline.py` 补原料持久化断言
 
@@ -74,7 +74,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 2（随 T004/T007 落地，此处确认完整）
 
-- [ ] T008 [US2] 在 `tests/contract/test_research_pipeline.py` 与
+- [x] T008 [US2] 在 `tests/contract/test_research_pipeline.py` 与
   `tests/contract/test_research_brief.py` 确认覆盖：成功调研 → 原料记录
   （asset_id/query/retriever/context 齐全且 ≤ 截断上限）；
   去重命中 → 原料追加到已有资产、记录数 +1
@@ -92,7 +92,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Tests for User Story 3（先写，确认失败）
 
-- [ ] T009 [US3] 在 `tests/contract/test_research_brief.py` 增加：
+- [x] T009 [US3] 在 `tests/contract/test_research_brief.py` 增加：
   精确缓存命中（同 query 零调用 status=cached）；
   清单内同义合并（mock 嵌入，status=merged）；
   库内高置信复用（cos≥0.88，资产类零调用 status=reused）；
@@ -102,7 +102,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ### Implementation for User Story 3
 
-- [ ] T010 [US3] 在 `orchestrator/brief.py` 实现四层漏斗（依赖 T005/T006）：
+- [x] T010 [US3] 在 `orchestrator/brief.py` 实现四层漏斗（依赖 T005/T006）：
   执行前 `get_material_by_query` → 清单内嵌入合并 → 库内复用匹配
   （`RESEARCH_SKIP_THRESHOLD`/`RESEARCH_ATTACH_THRESHOLD`，
   嵌入经 embedding.embed_texts，None 降级精确匹配）
@@ -113,7 +113,7 @@ quickstart.md ✅；无 contracts/（两张契约不动）
 
 ## Phase 6: Polish & 全量验收
 
-- [ ] T011 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
+- [x] T011 全量离线回归 `uv run pytest -m "not real"` 全绿（SC-004）
 - [X] T012 真机全流程（gptr-mcp + 嵌入服务在线）：按 quickstart.md
   场景 2-5——题材生成清单、批量执行（SC-001：≥3 资产 + ≥1 lore 原料）、
   同清单复跑验证 cached/reused 标记（SC-003a）、原料查证（SC-002）
