@@ -496,17 +496,26 @@ def build_server() -> FastMCP:
     @mcp.tool()
     def generate_reference_image(asset_id: str, n: int = 1,
                                  aspect_ratio: str | None = None,
-                                 prompt_override: str | None = None) -> dict:
+                                 prompt_override: str | None = None,
+                                 subject_reference: str | None = None,
+                                 seed: int | None = None) -> dict:
         """为资产生成参考图（MiniMax image-01，每张一次计费）。
+
         默认提示词为资产 visual_prompt，宽高比按类型（角色/道具竖版 2:3，
-        场景/时代横版 16:9）。返回 {paths, revision, sha256, ...}。"""
+        场景/时代横版 16:9）。返回 {paths, revision, sha256, seed,
+        used_reference, ...}。
+
+        subject_reference：本地图片路径或 data URL，做角色一致性（官方只收
+        单张 JPG/PNG、≤10MB、type=character、建议正面肖像；只锁主体长相，
+        不锁服装/构图）。seed：同参数可复现。不传时行为与原来一致。"""
         from .images import ImageGenError, generate_reference_images
         store = _store()
         try:
             try:
                 return generate_reference_images(
                     store, asset_id, n=n, aspect_ratio=aspect_ratio,
-                    prompt_override=prompt_override)
+                    prompt_override=prompt_override,
+                    subject_reference=subject_reference, seed=seed)
             except KeyError:
                 raise ToolError(f"AssetNotFound: 资产 {asset_id} 不存在")
             except ImageGenError as e:
