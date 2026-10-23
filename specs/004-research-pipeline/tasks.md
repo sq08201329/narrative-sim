@@ -151,6 +151,6 @@ T002（服务端 spike）建议最先做 —— 它不阻塞仓库内开发，�
 
 ## Phase 7: Convergence
 
-- [ ] T017 360search 限流恢复后，用同义查询词复验全链路（经 gptr-mcp）语义去重，确认库中对应资产数量为 1 per SC-002 (partial)
+- [ ] T017 360search 限流恢复后，用同义查询词复验全链路（经 gptr-mcp）语义去重，确认库中对应资产数量为 1 per SC-002 (partial) —— **依赖外部条件**：360search 限流恢复且检索腿切回；当前 gptr-mcp 走 deepseek 检索腿，离线可验证部分已由 `tests/contract/test_research_pipeline.py` 覆盖。
 - [X] T018 更正 `specs/004-research-pipeline/quickstart.md` 0b 节：`pip install fastmcp` 改为 `fastmcp-slim[server]`（fastmcp 4.x 拆分，现写法实测启动失败），并补 `PYTHONUTF8=1` 启动要求 per plan: quickstart 触点 (partial)
 - [X] T019 `orchestrator/research.py` 抽取重试纳入契约校验失败：`put_asset` schema 拒绝时重试一次抽取再报错，并补离线用例 per spec Edge Case「缺字段漂移可重试」 (partial)

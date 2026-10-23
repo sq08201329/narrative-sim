@@ -1,0 +1,43 @@
+name: CI
+
+# 当前状态：**CI 暂不可用**（不塞假绿，手动触发，前置检查会明确失败）。
+#
+# 原因：pyproject.toml 的 worldseed 依赖是本机路径：
+#   worldseed = { path = "D:/kimicode_repos/projects/my_mas/WorldSeed", editable = true }
+# 干净 runner 解析不了该路径，`uv sync` 会直接失败；其余依赖
+# （fastmcp-slim / mcp / openai / tinytroupe(git) / 仓库内 workspace 插件）本身在
+# runner 上可安装，离线测试也不需要任何外部服务（`pytest -m "not real"`）。
+#
+# 启用条件（缺一不可）：
+#   1) worldseed 有干净 runner 可获取的来源（PyPI / git 源，或测试用替身包）；
+#   2) 从 [tool.uv.sources] 移除该 path 写法；
+#   3) 本地跑 `uv run pytest tests -q -m "not real"` 全绿（当前 225 passed / 1 deselected）。
+#
+# 启用后本工作流即执行真实离线测试；启用前前置检查会失败并给出原因。
+
+on:
+  workflow_dispatch:
+
+jobs:
+  offline-tests:
+    name: 离线测试（pytest -m "not real"）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 前置检查：本地 path 依赖
+        run: |
+          if grep -qE '^\s*[a-zA-Z0-9_-]+\s*=\s*\{\s*path\s*=' pyproject.toml; then
+            echo "::error::CI 暂不可用：pyproject.toml 仍含本地 path 依赖（worldseed），干净 runner 无法安装。"
+            echo "启用条件见 .github/workflows/ci.yml 顶部注释。"
+            exit 1
+          fi
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: 同步依赖
+        run: uv sync --frozen --group dev
+
+      - name: 离线测试
+        run: uv run pytest tests -q -m "not real"
