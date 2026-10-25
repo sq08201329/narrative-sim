@@ -91,7 +91,17 @@ python scripts\asset_port.py verify --db data\projects\linan.db --file <bundle.j
 - `narrative_sim.db` 是历史的默认测试库，**已归档**，不再是默认工作库。
 - 运维注意：`orchestrator/mcp_server.py` 的缺省库路径仍是 `data/narrative_sim.db`——**裸起**服务（不带 `NARRATIVE_DB`）会新建一个空测试库，不是生产线库。起服务一律用 `scripts\start_stack.ps1`（自动带项目库 `data/projects/linan.db`）。
 
-## 八、其他本地产物
+## 八、古籍文库：data/corpus.db（016）
+
+- 全项目共享的**只读语料库**（中华古籍藏书，14094 部），不属于任何戏，
+  不进移交包；古籍来源的原料落在各戏原料表（retriever=`corpus:书名·篇目`）。
+- 入库/续跑：`uv run python scripts/corpus_ingest.py <藏书根目录>`
+  （幂等，断后原命令重跑即可）。
+- 检索：`db/corpus.py`（存储域单一入口，宪章 III v1.0.1）或 MCP
+  `corpus_search` / `corpus_browse`（零成本本地查询）。
+- 编码已归一 UTF-8；源目录只读，永不写回。
+
+## 九、其他本地产物
 
 - `logs/`：服务日志与 pidfile
 - `exports/`：事件 JSONL、搬运 bundle、临时巡检报告
