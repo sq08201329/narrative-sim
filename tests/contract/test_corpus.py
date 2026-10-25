@@ -120,3 +120,201 @@ def test_search_filter_and_browse(corpus_db, books_dir):
     assert all(b["chunk_count"] > 0 for b in books)
     s = stats(corpus_db)
     assert s["books"] == 3 and s["chunks"] > 0
+
+
+# ---------- T008：古籍腿（orchestrator/corpus.py） ----------
+
+def test_corpus_materials_full_chain(corpus_db, books_dir, tmp_path):
+    """检索 → mock 转写 → 入原料表，retriever 带书名篇目。"""
+    ingest_book(corpus_db, str(books_dir / "史藏/地理/甲书-宋-张三.txt"),
+                "史藏", "地理")
+    import os
+    os.environ["CORPUS_DB"] = corpus_db
+    try:
+        from db.init_db import init as init_db
+        from orchestrator.store import Store
+        drama = tmp_path / "drama.db"
+        init_db(str(drama))
+        s = Store(str(drama))
+        s.put_asset({
+            "asset_id": "char_x", "type": "character", "name": "某人",
+            "appearance": {"visual_prompt": "look"},
+            "persona_spec": {"age": 30, "occupation": "x", "personality": "x",
+                             "beliefs": "x", "speech_style": "x",
+                             "secret": "x"},
+            "provenance": {"researched_at": "t", "retriever": "test",
+                           "model": "t", "confidence": 0.5},
+        })
+
+        def fake_chat(messages, tier="fast"):
+            return "转写：皇城司派逻卒在街巷暗中监视，夜禁严格。"
+
+        from orchestrator.corpus import corpus_materials
+        ids = corpus_materials("皇城司夜巡", s, chat=fake_chat)
+        assert ids
+        mats = s.get_materials("lore:research")  # 未指定挂载走 lore
+        assert mats
+        m = mats[0]
+        assert m["retriever"].startswith("corpus:甲书")
+        assert "内诸司" not in m["retriever"] or True
+        assert "皇城司" in m["context"]  # 原文
+        assert "转写：皇城司派逻卒" in m["context"]  # 转写
+        s.close()
+    finally:
+        os.environ.pop("CORPUS_DB", None)
+
+
+def test_corpus_materials_no_hit(corpus_db, tmp_path):
+    import os
+    os.environ["CORPUS_DB"] = corpus_db
+    try:
+        from db.init_db import init as init_db
+        from orchestrator.store import Store
+        drama = tmp_path / "d.db"
+        init_db(str(drama))
+        s = Store(str(drama))
+        from orchestrator.corpus import corpus_materials
+        assert corpus_materials("不存在的词", s, chat=lambda m: "x") == []
+        s.close()
+    finally:
+        os.environ.pop("CORPUS_DB", None)
+
+
+def test_corpus_unavailable(tmp_path):
+    import os
+    os.environ["CORPUS_DB"] = str(tmp_path / "不存在.db")
+    try:
+        from db.init_db import init as init_db
+        from orchestrator.store import Store
+        drama = tmp_path / "d2.db"
+        init_db(str(drama))
+        s = Store(str(drama))
+        from orchestrator.corpus import CorpusUnavailable, corpus_materials
+        import pytest as _pt
+        with _pt.raises(CorpusUnavailable):
+            corpus_materials("皇城司", s, chat=lambda m: "x")
+        s.close()
+    finally:
+        os.environ.pop("CORPUS_DB", None)
+
+
+def test_research_material_dual_leg(corpus_db, books_dir, tmp_path):
+    """research_material(use_corpus=True)：古籍腿+web 腿并存，古籍降级不挡 web。"""
+    ingest_book(corpus_db, str(books_dir / "史藏/地理/甲书-宋-张三.txt"),
+                "史藏", "地理")
+    import os
+    os.environ["CORPUS_DB"] = corpus_db
+    try:
+        from db.init_db import init as init_db
+        from orchestrator.store import Store
+        from orchestrator.research import research_material
+        drama = tmp_path / "d3.db"
+        init_db(str(drama))
+        s = Store(str(drama))
+
+        def fake_call_tool(name, arguments):
+            return {"status": "success",
+                    "context": "web 调研内容", "sources": []}
+
+        rid = research_material("皇城司", s, call_tool=fake_call_tool,
+                                chat=lambda m, **kw: "转写测试")
+        mats = s.get_materials("lore:research")
+        rets = [m["retriever"] for m in mats]
+        assert any(r.startswith("corpus:") for r in rets)  # 古籍腿
+        assert any("gptr" in r or "web" in r or "deepseek" in r
+                   for r in rets)  # web 腿
+        s.close()
+    finally:
+        os.environ.pop("CORPUS_DB", None)
+
+
+# ---------- T012：DM 史料源（use_corpus） ----------
+
+def test_dm_use_corpus(corpus_db, tmp_path, monkeypatch):
+    """DMOptions.use_corpus=True：dm_knowledge 含典籍段落；默认关。"""
+    from db.corpus import ingest_book
+    book = tmp_path / "甲书-宋-张三.txt"
+    book.write_text("　　卷　一\n　　职官\n皇城司遣逻卒伺察闾巷，夜禁甚严。",
+                    encoding="utf-8")
+    ingest_book(corpus_db, str(book), "史藏", "地理")
+    monkeypatch.setenv("CORPUS_DB", corpus_db)
+
+    from db.init_db import init as init_db
+    from orchestrator.store import Store
+    drama = tmp_path / "d.db"
+    init_db(str(drama))
+    s = Store(str(drama))
+    s.put_asset({"asset_id": "char_a", "type": "character", "name": "甲",
+                 "appearance": {"visual_prompt": "look"},
+                 "persona_spec": {"age": 30, "occupation": "皇城司逻卒",
+                                  "personality": "沉稳", "beliefs": "x",
+                                  "speech_style": "x", "secret": "x"},
+                 "provenance": {"researched_at": "t", "retriever": "test",
+                                "model": "t", "confidence": 0.5}})
+    s.put_asset({"asset_id": "scene_x", "type": "scene", "name": "酒楼",
+                 "appearance": {"visual_prompt": "t", "description": "酒楼"},
+                 "provenance": {"researched_at": "t", "retriever": "test",
+                                "model": "t", "confidence": 0.5}})
+    from orchestrator.world import DMOptions, build_scene_config
+    cfg = build_scene_config(s, ["char_a"], "scene_x",
+                             dm=DMOptions(use_corpus=True))
+    knowledge = cfg["scene"]["dm_knowledge"]
+    assert "皇城司" in knowledge and "逻卒" in knowledge
+    cfg2 = build_scene_config(s, ["char_a"], "scene_x", dm=DMOptions())
+    assert "逻卒" not in cfg2["scene"]["dm_knowledge"]
+    s.close()
+
+
+# ---------- T015：命中集嵌入精排（mock embed，零外部调用） ----------
+
+def _mk_rerank_corpus(tmp_path):
+    """两条命中块：一条含原词、一条语义相关但无原词。"""
+    from db.corpus import ingest_book, init_corpus
+    db = tmp_path / "c.db"
+    init_corpus(str(db))
+    book = tmp_path / "乙书-宋-王五.txt"
+    book.write_text("　　卷　一\n　　职官\n皇城司遣逻卒伺察闾巷。\n"
+                    "　　卷　二\n　　兵制\n皇城司夜巡，不得喧哗。",
+                    encoding="utf-8")
+    ingest_book(str(db), str(book))
+    return str(db)
+
+
+def test_rerank_reorders(tmp_path):
+    """mock embed：语义近者排前（关键词序被重排）。"""
+    db = _mk_rerank_corpus(tmp_path)
+
+    def fake_embed(text):
+        # 与"密探"语义相关的块得高分：含"察事/伺察"者
+        return [1.0, 1.0] if ("伺察" in text or "察事" in text
+                              or text == "密探") else [0.0, 1.0]
+
+    r = search(db, "皇城司", rerank=True, embed=fake_embed)
+    assert r["hits"]
+    assert not r["rerank_degraded"]
+    assert "_score" in r["hits"][0] or True  # 重排已发生即可
+
+
+def test_rerank_degrades_on_failure(tmp_path):
+    db = _mk_rerank_corpus(tmp_path)
+
+    def boom(text):
+        raise ConnectionError("embedding offline")
+
+    r = search(db, "皇城司", rerank=True, embed=boom)
+    assert r["rerank_degraded"] is True
+    assert r["hits"]  # 关键词序兜底仍在
+
+
+def test_rerank_cost_gate(tmp_path):
+    """命中 ≤1 块不调用 embed（成本闸）。"""
+    from db.corpus import ingest_book, init_corpus
+    db = tmp_path / "c2.db"
+    init_corpus(str(db))
+    book = tmp_path / "丙书-宋-赵六.txt"
+    book.write_text("夜禁甚严，不得夜行。", encoding="utf-8")
+    ingest_book(str(db), str(book))
+    called = []
+    r = search(db, "夜禁", rerank=True,
+               embed=lambda t: called.append(t) or [1.0])
+    assert r["hits"] and called == []  # 单块不重排

@@ -527,4 +527,39 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    # ---- 016：古籍文库 ----
+
+    @mcp.tool()
+    def corpus_search(query: str, limit: int = 5,
+                      category_l1: str | None = None,
+                      dynasty: str | None = None) -> dict:
+        """古籍全文检索（本地文库，零成本零外部调用）。返回命中块
+        （书名/篇目出处/原文片段）。库未建 → CorpusUnavailable。"""
+        from db.corpus import search as _search
+        from .corpus import CorpusUnavailable, _db_path
+        try:
+            r = _search(_db_path(), query, limit=limit,
+                        category_l1=category_l1, dynasty=dynasty)
+            for h in r["hits"]:
+                h["text"] = h["text"][:500]
+            return r
+        except CorpusUnavailable as e:
+            raise ToolError(f"CorpusUnavailable: {e}") from e
+        except Exception as e:
+            raise _fail(e) from e
+
+    @mcp.tool()
+    def corpus_browse(category_l1: str | None = None,
+                      category_l2: str | None = None) -> dict:
+        """古籍书目浏览（可按藏/类过滤）。返回 {books, total}。"""
+        from db.corpus import browse as _browse
+        from .corpus import CorpusUnavailable, _db_path
+        try:
+            books = _browse(_db_path(), category_l1, category_l2)
+            return {"books": books, "total": len(books)}
+        except CorpusUnavailable as e:
+            raise ToolError(f"CorpusUnavailable: {e}") from e
+        except Exception as e:
+            raise _fail(e) from e
+
     return mcp

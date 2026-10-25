@@ -233,13 +233,25 @@ def _persist_material(store, asset_id: str, query: str, context: str) -> None:
 
 def research_material(query: str, store, *,
                       link_asset_id: str | None = None,
-                      call_tool=None) -> int:
+                      call_tool=None, use_corpus: bool = True,
+                      chat=None) -> int:
     """素材类调研（009 FR-004）：取料直接入原料表，不做资产化。
-    返回原料行 id。link_asset_id 未给且无法匹配已有资产时挂 "lore:research"。"""
+    返回 web 腿原料行 id。link_asset_id 未给且无法匹配已有资产时挂
+    "lore:research"。use_corpus=True（016）先走古籍腿：典籍原文+转写
+    入原料表（retriever=corpus:书名·篇目）；古籍库不可用/零命中降级，
+    不影响 web 腿。"""
     if not query or not query.strip():
         raise ResearchError("查询词为空或仅含空白字符")
     if call_tool is None:
         call_tool = _default_call_tool()
+
+    if use_corpus:
+        try:
+            from .corpus import CorpusUnavailable, corpus_materials
+            corpus_materials(query, store, link_asset_id=link_asset_id,
+                             chat=chat)
+        except CorpusUnavailable:
+            pass  # 古籍库未建：降级纯 web 腿
 
     try:
         resp = call_tool("deep_research", {"query": query})

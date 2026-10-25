@@ -219,7 +219,16 @@ def search(db_path: str, query: str, limit: int = 5,
             args.append(author)
         filt = ("AND " + " AND ".join(where)) if where else ""
 
-        if len(query) >= 3:
+        # CJK 无分词：query 按空白拆词，各词切滑动三元组全体 OR
+        # （短语精确匹配对组合 query 会零命中，OR+rank 保召回）；
+        # 词全短于 3 字（trigram 下限）时走 LIKE
+        tris = []
+        for tok in query.split():
+            if len(tok) >= 3:
+                tris += [tok[i:i + 3] for i in range(len(tok) - 2)]
+        use_fts = bool(tris)
+        if use_fts:
+            fts_q = " OR ".join(f'"{t}"' for t in tris)
             sql = (
                 "SELECT c.id AS cid, c.book_id, b.title, c.seq, c.chapter,"
                 " c.section, c.heading_path, c.text,"
@@ -228,7 +237,7 @@ def search(db_path: str, query: str, limit: int = 5,
                 " JOIN books b ON b.book_id = c.book_id"
                 f" WHERE chunks_fts MATCH ? {filt} ORDER BY rank LIMIT ?"
             )
-            rows = conn.execute(sql, [f'"{query}"', *args, 200 if rerank
+            rows = conn.execute(sql, [fts_q, *args, 200 if rerank
                                   else limit]).fetchall()
         else:
             sql = (

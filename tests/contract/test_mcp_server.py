@@ -48,7 +48,9 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   "generate_interlude_memory", "get_interlude_memory",
                   "revise_interlude_memory",
                   # 013 参考图
-                  "generate_reference_image"}
+                  "generate_reference_image",
+                  # 016 古籍文库
+                  "corpus_search", "corpus_browse"}
 
 
 @pytest.fixture()
@@ -698,3 +700,38 @@ def test_generate_reference_image_passes_i2i_params(mcp, monkeypatch):
     assert seen["seed"] == 11
     assert seen["n"] == 2
     assert r.data["used_reference"] is True
+
+
+# ---------- T012：MCP 检索面 + DM 史料源 ----------
+
+def _mk_corpus(tmp_path, monkeypatch):
+    """迷你古籍库 + CORPUS_DB 指向。"""
+    from db.corpus import ingest_book, init_corpus
+    db = tmp_path / "corpus.db"
+    init_corpus(str(db))
+    book = tmp_path / "甲书-宋-张三.txt"
+    book.write_text("　　卷　一\n　　职官\n皇城司遣逻卒伺察闾巷，夜禁甚严。",
+                    encoding="utf-8")
+    ingest_book(str(db), str(book), "史藏", "地理")
+    monkeypatch.setenv("CORPUS_DB", str(db))
+    return str(db)
+
+
+def test_corpus_search_and_browse_via_mcp(mcp, tmp_path, monkeypatch):
+    _mk_corpus(tmp_path, monkeypatch)
+    r = call(mcp, "corpus_search", {"query": "皇城司"})
+    assert r.data["hits"][0]["title"] == "甲书"
+    assert "卷一" in r.data["hits"][0]["heading_path"]
+    assert r.data["total_books"] == 1
+
+    r = call(mcp, "corpus_browse", {"category_l1": "史藏"})
+    assert r.data["total"] == 1
+    assert r.data["books"][0]["title"] == "甲书"
+    r = call(mcp, "corpus_browse", {"category_l1": "佛藏"})
+    assert r.data["total"] == 0
+
+
+def test_corpus_unavailable_via_mcp(mcp, monkeypatch):
+    monkeypatch.setenv("CORPUS_DB", "data/不存在_xyz.db")
+    with pytest.raises(ToolError, match="CorpusUnavailable"):
+        call(mcp, "corpus_search", {"query": "皇城司"})
