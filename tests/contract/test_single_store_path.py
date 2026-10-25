@@ -9,7 +9,10 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 SCAN_DIRS = ["scripts", "tests", "orchestrator"]
 SELF = ROOT / "tests" / "contract" / "test_single_store_path.py"
-ALLOWED = {ROOT / "orchestrator" / "store.py", ROOT / "db" / "init_db.py", SELF}
+# 例外：db/corpus.py 是古籍文库存储域的单一入口（与戏库分离的独立域，
+# 016 spike；转正时宪章 III 补"每存储域单一入口"措辞）
+ALLOWED = {ROOT / "orchestrator" / "store.py", ROOT / "db" / "init_db.py",
+           ROOT / "db" / "corpus.py", SELF}
 
 # 直连信号：import sqlite3、sqlite3.connect、.execute( 裸 SQL
 PATTERNS = [
