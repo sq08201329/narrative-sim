@@ -40,11 +40,20 @@ CREATE INDEX IF NOT EXISTS idx_chunks_book ON chunks(book_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='trigram'
 );
+-- 二元索引（unicode61）：CJK 两字词（夜市/茶肆）trigram 不支持，
+-- 存"夜市 市物 物件"式空格分隔二元流，2 字词精确命中 token
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_bi USING fts5(bi);
 """
 
 _CHAPTER_RE = re.compile(r"卷[\s　]*[一二三四五六七八九十百〇零\d]+")
 _HEADING_RE = re.compile(r"^[　\s]*(\S.{0,18}?)\s*$")
 _SENT_SPLIT = re.compile(r"(?<=[。！？；])")
+
+
+def _bigrams(text: str) -> str:
+    """文本 → 空格分隔二元流（unicode61 按空格切 token = 二元组）。"""
+    t = re.sub(r"\s+", "", text)
+    return " ".join(t[i:i + 2] for i in range(len(t) - 1))
 
 
 def init_corpus(db_path: str) -> str:
@@ -67,7 +76,11 @@ def _read_text(path: Path) -> tuple[str, str]:
     """
     raw = path.read_bytes()
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return raw.decode("utf-16"), ""
+        try:
+            return raw.decode("utf-16"), ""
+        except UnicodeDecodeError:
+            # BOM 在但中途有非法代理项（随息居饮食谱实测）→ 有损兜底
+            return raw.decode("utf-16", errors="replace"), "encoding_lossy"
     for enc in ("utf-8", "gb18030"):
         try:
             return raw.decode(enc), ""
@@ -182,6 +195,8 @@ def ingest_book(db_path: str, txt_path: str,
                 marks = ",".join("?" * len(old))
                 conn.execute(f"DELETE FROM chunks_fts WHERE rowid IN ({marks})",
                              old)
+                conn.execute(f"DELETE FROM chunks_bi WHERE rowid IN ({marks})",
+                             old)
                 conn.execute("DELETE FROM chunks WHERE book_id=?", (book_id,))
             conn.execute("DELETE FROM books WHERE book_id=?", (book_id,))
             conn.execute(
@@ -198,6 +213,9 @@ def ingest_book(db_path: str, txt_path: str,
                 conn.execute(
                     "INSERT INTO chunks_fts(rowid, text) VALUES(?,?)",
                     (cur.lastrowid, body))
+                conn.execute(
+                    "INSERT INTO chunks_bi(rowid, bi) VALUES(?,?)",
+                    (cur.lastrowid, _bigrams(body)))
         return {**base, "status": "ingested" if blocks else "empty",
                 "chunks": len(blocks), "chars": len(text), "note": note}
     finally:
@@ -258,8 +276,25 @@ def search(db_path: str, query: str, limit: int = 5,
                     seen.add(d["cid"])
                     hits.append(d)
 
-        terms = shorts if (shorts and tris) else (shorts or [query.strip()])
-        if terms and (not tris or shorts):
+        # 短词分流：2 字走二元索引（chunks_bi），1 字留 LIKE
+        bis = [t for t in shorts if len(t) == 2]
+        ones = [t for t in shorts if len(t) == 1]
+        if bis:
+            bi_q = " OR ".join(f'"{t}"' for t in bis)
+            sql = (
+                f"SELECT {cols}, c.text AS snip"
+                " FROM chunks_bi bi JOIN chunks c ON c.id = bi.rowid"
+                " JOIN books b ON b.book_id = c.book_id"
+                f" WHERE chunks_bi MATCH ? {filt} ORDER BY rank LIMIT ?"
+            )
+            for r in conn.execute(sql, [bi_q, *args, cap]).fetchall():
+                d = dict(r)
+                if d["cid"] not in seen:
+                    seen.add(d["cid"])
+                    hits.append(d)
+
+        terms = (ones or ([query.strip()] if not (tris or bis) else []))
+        if terms:
             likes = " OR ".join("c.text LIKE ?" for _ in terms)
             sql = (
                 f"SELECT {cols}, c.text AS snip"
@@ -319,6 +354,31 @@ def browse(db_path: str, category_l1: str | None = None,
             f" category_l2, chunk_count, char_count, note FROM books {filt}"
             " ORDER BY category_l1, category_l2, title", args).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def backfill_bigrams(db_path: str, batch: int = 20000) -> int:
+    """既有库补建二元索引（迁移用）。返回补建行数。"""
+    init_corpus(db_path)
+    conn = sqlite3.connect(db_path)
+    total = 0
+    try:
+        while True:
+            rows = conn.execute(
+                "SELECT c.id, c.text FROM chunks c"
+                " LEFT JOIN chunks_bi bi ON bi.rowid = c.id"
+                " WHERE bi.rowid IS NULL LIMIT ?", (batch,)).fetchall()
+            if not rows:
+                break
+            with conn:
+                for cid, text in rows:
+                    conn.execute(
+                        "INSERT INTO chunks_bi(rowid, bi) VALUES(?,?)",
+                        (cid, _bigrams(text)))
+            total += len(rows)
+            print(f"  二元索引补建 {total}...", flush=True)
+        return total
     finally:
         conn.close()
 
