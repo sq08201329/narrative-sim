@@ -58,17 +58,22 @@ def init_corpus(db_path: str) -> str:
     return db_path
 
 
-def _read_text(path: Path) -> str:
+def _read_text(path: Path) -> tuple[str, str]:
+    """读入并归一 UTF-8。返回 (文本, 编码注记)。
+
+    BOM 优先（UTF-16 藏书实测存在）；UTF-8 → GB18030 严格；
+    个别坏字节（宋史等 8 部实测）→ GB18030 替换字符有损兜底 +
+    encoding_lossy 注记。
+    """
     raw = path.read_bytes()
-    # BOM 优先（UTF-16 藏书实测存在）；其后 UTF-8 → GB18030
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return raw.decode("utf-16")
+        return raw.decode("utf-16"), ""
     for enc in ("utf-8", "gb18030"):
         try:
-            return raw.decode(enc)
+            return raw.decode(enc), ""
         except UnicodeDecodeError:
             continue
-    raise ValueError("编码不可识别（非 UTF-8/UTF-16/GB18030）")
+    return raw.decode("gb18030", errors="replace"), "encoding_lossy"
 
 
 def _parse_filename(name: str) -> tuple[str, str, str]:
@@ -152,7 +157,7 @@ def ingest_book(db_path: str, txt_path: str,
     book_id = re.sub(r"\W+", "_", p.stem)
     base = {"book_id": book_id, "chunks": 0, "chars": 0, "note": ""}
     try:
-        text = _read_text(p)
+        text, enc_note = _read_text(p)
     except (OSError, ValueError) as e:
         return {**base, "status": "failed", "note": str(e)}
 
@@ -166,7 +171,8 @@ def ingest_book(db_path: str, txt_path: str,
             return {**base, "status": "skipped"}
 
         blocks, no_punct = _chunk(text)
-        note = "no_punct_fallback" if no_punct else ""
+        note = " ".join(x for x in (enc_note,
+                        "no_punct_fallback" if no_punct else "") if x)
         if not blocks:
             note = "empty"
         with conn:  # 单书一事务：要么全进要么全滚回
