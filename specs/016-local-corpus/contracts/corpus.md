@@ -38,7 +38,7 @@ CORPUS_DB = os.environ.get("CORPUS_DB", "data/corpus.db")
 def corpus_materials(query: str, store: Store, top_k: int = 3,
                      chat=None) -> list[int]:
     """古籍腿：检索 top_k → LLM 转写 → put_material（retriever=
-    corpus:<book_id>·<heading_path>）。返回原料行 id 列表。
+    corpus:<书名>·<篇目>）。返回原料行 id 列表。
     库缺失 → CorpusUnavailable（调用方降级标注）；零命中返回 []。"""
 
 def corpus_knowledge(query: str, budget: int) -> str:
