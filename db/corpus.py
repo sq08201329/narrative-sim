@@ -202,7 +202,12 @@ def search(db_path: str, query: str, limit: int = 5,
            category_l1: str | None = None, dynasty: str | None = None,
            author: str | None = None, rerank: bool = False,
            embed=None) -> dict:
-    """检索（契约 §1）：关键词主力 + 过滤 + 可选命中集精排。"""
+    """检索（契约 §1）：关键词主力 + 过滤 + 可选命中集精排。
+
+    CJK 无分词：query 按空白拆词；≥3 字词切滑动三元组走 FTS5（OR+rank），
+    短词（<3 字）走 LIKE 补召回，两路结果合并去重（FTS 命中优先）。
+    无三元组时纯 LIKE。限定词不一票否决（OR 语义）。
+    """
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -219,37 +224,49 @@ def search(db_path: str, query: str, limit: int = 5,
             args.append(author)
         filt = ("AND " + " AND ".join(where)) if where else ""
 
-        # CJK 无分词：query 按空白拆词，各词切滑动三元组全体 OR
-        # （短语精确匹配对组合 query 会零命中，OR+rank 保召回）；
-        # 词全短于 3 字（trigram 下限）时走 LIKE
-        tris = []
+        tris, shorts = [], []
         for tok in query.split():
             if len(tok) >= 3:
                 tris += [tok[i:i + 3] for i in range(len(tok) - 2)]
-        use_fts = bool(tris)
-        if use_fts:
+            elif tok:
+                shorts.append(tok)
+
+        cols = ("c.id AS cid, c.book_id, b.title, c.seq, c.chapter,"
+                " c.section, c.heading_path, c.text")
+        cap = 200 if rerank else limit
+        hits: list[dict] = []
+        seen: set[int] = set()
+
+        if tris:
             fts_q = " OR ".join(f'"{t}"' for t in tris)
             sql = (
-                "SELECT c.id AS cid, c.book_id, b.title, c.seq, c.chapter,"
-                " c.section, c.heading_path, c.text,"
+                f"SELECT {cols},"
                 " snippet(chunks_fts, 0, '【', '】', '…', 32) AS snip"
                 " FROM chunks_fts f JOIN chunks c ON c.id = f.rowid"
                 " JOIN books b ON b.book_id = c.book_id"
                 f" WHERE chunks_fts MATCH ? {filt} ORDER BY rank LIMIT ?"
             )
-            rows = conn.execute(sql, [fts_q, *args, 200 if rerank
-                                  else limit]).fetchall()
-        else:
-            sql = (
-                "SELECT c.id AS cid, c.book_id, b.title, c.seq, c.chapter,"
-                " c.section, c.heading_path, c.text, c.text AS snip"
-                " FROM chunks c JOIN books b ON b.book_id = c.book_id"
-                f" WHERE c.text LIKE ? {filt} LIMIT ?"
-            )
-            rows = conn.execute(sql, [f"%{query}%", *args,
-                                      200 if rerank else limit]).fetchall()
+            for r in conn.execute(sql, [fts_q, *args, cap]).fetchall():
+                d = dict(r)
+                if d["cid"] not in seen:
+                    seen.add(d["cid"])
+                    hits.append(d)
 
-        hits = [dict(r) for r in rows]
+        terms = shorts if (shorts and tris) else (shorts or [query.strip()])
+        if terms and (not tris or shorts):
+            likes = " OR ".join("c.text LIKE ?" for _ in terms)
+            sql = (
+                f"SELECT {cols}, c.text AS snip"
+                " FROM chunks c JOIN books b ON b.book_id = c.book_id"
+                f" WHERE ({likes}) {filt} LIMIT ?"
+            )
+            for r in conn.execute(sql, [*[f"%{t}%" for t in terms],
+                                      *args, cap]).fetchall():
+                d = dict(r)
+                if d["cid"] not in seen:
+                    seen.add(d["cid"])
+                    hits.append(d)
+
         degraded = False
         if rerank and len(hits) >= 2 and embed is not None:
             try:
