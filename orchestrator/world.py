@@ -42,6 +42,7 @@ class DMOptions:
     model: str = ""
     timeout_s: float = 30.0
     max_retries: int = 2
+    use_corpus: bool = False  # 016：dm_knowledge 先古籍史料后调研原料
 
     def __post_init__(self):
         if not self.model:
@@ -140,12 +141,14 @@ def build_scene_config(store: Store, character_ids: list[str],
     }]
 
     agents = []
+    dm_query_terms = [scene_asset["name"]]  # 016：DM 史料源检索词
     for cid in character_ids:
         try:
             asset = _pinned_get(store, cid, pins)
         except KeyError as e:
             raise WorldConfigError(f"世界配置缺少角色资产: {e}") from e
         spec = asset.get("persona_spec", {})
+        dm_query_terms.append(str(spec.get("occupation", "")))
         beliefs = spec.get("beliefs", "")
         if isinstance(beliefs, list):
             beliefs = "；".join(str(b) for b in beliefs)
@@ -184,8 +187,18 @@ def build_scene_config(store: Store, character_ids: list[str],
                 "max_effects": dm.max_effects,
             }},
         }
-        config["scene"]["dm_knowledge"] = build_dm_knowledge(
-            store, [*character_ids, location_id], dm.knowledge_chars)
+        budget = dm.knowledge_chars
+        knowledge = ""
+        if dm.use_corpus:
+            from .corpus import corpus_knowledge
+            knowledge = corpus_knowledge(" ".join(dm_query_terms), budget)
+            budget -= len(knowledge)
+        materials_part = (build_dm_knowledge(
+            store, [*character_ids, location_id], budget)
+            if budget > 0 else "")
+        config["scene"]["dm_knowledge"] = (
+            knowledge + ("\n" if knowledge and materials_part else "")
+            + materials_part)
         config["scene"]["max_dm_calls"] = dm.max_calls
     return config
 

@@ -1,23 +1,15 @@
 <!--
-Sync Impact Report
+Sync Impact Report（016， temporary — 提交前可删）
 ==================
-版本变更: 模板占位 (0.0.0) → 1.0.0
-变更类型: 初始批准。模板占位章节全部替换为项目实义条款，故按 MAJOR 计。
+版本变更: 1.0.0 → 1.0.1
+变更类型: PATCH（措辞澄清，非语义变更）
 修改的原则:
-  - [PRINCIPLE_1_NAME] → I. 契约先行（Contract First）
-  - [PRINCIPLE_2_NAME] → II. 单一胶水层（Orchestrator as Sole Glue）
-  - [PRINCIPLE_3_NAME] → III. 存储单一入口（Single Writer to Storage）
-  - [PRINCIPLE_4_NAME] → IV. 适配器隔离与 Mock 基线（Adapter Isolation）
-  - [PRINCIPLE_5_NAME] → V. UV 统一依赖管理（UV-Only Dependencies）
-新增原则: VI. 密钥与成本边界（Secrets & Cost Boundary）
-新增章节: 技术栈与运行环境约束；开发工作流与质量门禁
-移除章节: 无
-待办:
-  - TODO(GIT_REPO): 当前目录尚未初始化 git 仓库，"一个特性一个分支"无法执行；
-    需先建立仓库与 main 基线，再开始第一个特性。
-  - 参考文档 mydocs/叙事仿真系统开发手册.md 的 4.1 / 4.2 节仍写 pip install，
-    与本宪章原则 V 冲突，以本宪章为准；手册下次修订时同步。
+  - III. 存储单一入口 → 每存储域单一入口（戏库 store.py / 文库 db/corpus.py），
+    新增"新存储域先登记入口"条款
+新增/移除章节: 无
+待办: 无
 -->
+
 
 # 叙事仿真系统（narrative-sim）Constitution
 
@@ -47,12 +39,16 @@ Sync Impact Report
 
 ### III. 存储单一入口（Single Writer to Storage）
 
-- 只有 `orchestrator/store.py` MAY 读写 SQLite；其他模块 MUST 通过 Store 接口访问。
+- **每个存储域有且只有一个入口模块**：戏库（资产/世界/事件/裁决/原料/记忆）
+  为 `orchestrator/store.py`；古籍文库（语料/检索索引）为 `db/corpus.py`。
+  其他模块 MUST 通过对应入口访问，MUST NOT 绕过直连 SQLite。
 - 数据库 MUST 是各管线之间的共享记忆；MUST NOT 用文件或进程内状态替代持久世界状态。
 - 世界状态 MUST 每回合落入 `worlds.state`，以支撑断点续跑。
 - DDL 变更 MUST 幂等（`CREATE TABLE IF NOT EXISTS`），MUST NOT 破坏既有数据。
+- 新增存储域 MUST 先登记入口模块并扩展接缝守卫白名单，再写业务代码。
 
-理由：多入口写库会让"断点续跑"与"按 run_id 对账"同时失效。
+理由：多入口写库会让"断点续跑"与"按 run_id 对账"同时失效；多存储域
+（戏库/文库）共享同一原则，但各有单一入口。
 
 ### IV. 适配器隔离与 Mock 基线（Adapter Isolation & Mock Baseline）
 
@@ -122,4 +118,4 @@ Sync Impact Report
 - 合规审查 MUST 在 `/skill:speckit-analyze` 与代码评审两个环节执行。
 - 运行时开发指引见 `mydocs/叙事仿真系统开发手册.md`（实现细节）与本文件（治理约束）。
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-19 | **Last Amended**: 2026-10-19
+**Version**: 1.0.1 | **Ratified**: 2026-10-19 | **Last Amended**: 2026-10-25
