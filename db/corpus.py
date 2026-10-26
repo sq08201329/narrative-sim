@@ -34,15 +34,19 @@ CREATE TABLE IF NOT EXISTS chunks (
     chapter      TEXT NOT NULL DEFAULT '',
     section      TEXT NOT NULL DEFAULT '',
     heading_path TEXT NOT NULL DEFAULT '',
-    text         TEXT NOT NULL
+    text         TEXT NOT NULL,
+    bi           TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_chunks_book ON chunks(book_id);
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     text, content='chunks', content_rowid='id', tokenize='trigram'
 );
--- 二元索引（unicode61）：CJK 两字词（夜市/茶肆）trigram 不支持，
--- 存"夜市 市物 物件"式空格分隔二元流，2 字词精确命中 token
-CREATE VIRTUAL TABLE IF NOT EXISTS chunks_bi USING fts5(bi);
+-- 二元索引（unicode61，external-content 挂 chunks.bi）：
+-- CJK 两字词 trigram 不支持，bi 列存"夜市 市物 物件"式二元流，
+-- 索引由 'rebuild' 整建（C 层批量，远快于逐行 INSERT）
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_bi USING fts5(
+    bi, content='chunks', content_rowid='id', tokenize='unicode61'
+);
 """
 
 _CHAPTER_RE = re.compile(r"卷[\s　]*[一二三四五六七八九十百〇零\d]+")
@@ -61,6 +65,11 @@ def init_corpus(db_path: str) -> str:
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(DDL)
+        cols = {r[1] for r in conn.execute(
+            "PRAGMA table_info(chunks)").fetchall()}
+        if "bi" not in cols:
+            conn.execute(
+                "ALTER TABLE chunks ADD COLUMN bi TEXT NOT NULL DEFAULT ''")
         conn.commit()
     finally:
         conn.close()
@@ -195,8 +204,11 @@ def ingest_book(db_path: str, txt_path: str,
                 marks = ",".join("?" * len(old))
                 conn.execute(f"DELETE FROM chunks_fts WHERE rowid IN ({marks})",
                              old)
-                conn.execute(f"DELETE FROM chunks_bi WHERE rowid IN ({marks})",
-                             old)
+                for rid in old:
+                    conn.execute(
+                        "INSERT INTO chunks_bi(chunks_bi, rowid, bi)"
+                        " VALUES('delete', ?, (SELECT bi FROM chunks"
+                        " WHERE id=?))", (rid, rid))
                 conn.execute("DELETE FROM chunks WHERE book_id=?", (book_id,))
             conn.execute("DELETE FROM books WHERE book_id=?", (book_id,))
             conn.execute(
@@ -208,8 +220,9 @@ def ingest_book(db_path: str, txt_path: str,
             for i, (hp, chapter, section, body) in enumerate(blocks):
                 cur = conn.execute(
                     "INSERT INTO chunks(book_id, seq, chapter, section,"
-                    " heading_path, text) VALUES(?,?,?,?,?,?)",
-                    (book_id, i, chapter, section, hp, body))
+                    " heading_path, text, bi) VALUES(?,?,?,?,?,?,?)",
+                    (book_id, i, chapter, section, hp, body,
+                     _bigrams(body)))
                 conn.execute(
                     "INSERT INTO chunks_fts(rowid, text) VALUES(?,?)",
                     (cur.lastrowid, body))
@@ -358,36 +371,50 @@ def browse(db_path: str, category_l1: str | None = None,
         conn.close()
 
 
-def backfill_bigrams(db_path: str, batch: int = 50000) -> int:
-    """既有库补建二元索引（迁移用）。返回补建行数。
+def backfill_bigrams(db_path: str) -> None:
+    """既有库迁移：填 chunks.bi 实体列（无索引开销）+ FTS 整建。
 
-    迁移期提速：synchronous=OFF + journal_mode=MEMORY（崩了重跑即可，
-    幂等）；结束做 FTS optimize 合并段。
+    幂等：bi='' 的块才处理。索引重建用 'rebuild'（external-content）。
     """
     init_corpus(db_path)
     conn = sqlite3.connect(db_path)
-    total = 0
     try:
         conn.execute("PRAGMA synchronous=OFF")
         conn.execute("PRAGMA journal_mode=MEMORY")
         conn.execute("PRAGMA temp_store=MEMORY")
+        # 旧版 chunks_bi（无 content= 的普通表）无法 rebuild，弃之重建
+        ddl = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name='chunks_bi'"
+        ).fetchone()
+        if ddl and "content=" not in ddl[0]:
+            print("旧二元索引（普通表）弃置重建...", flush=True)
+            conn.execute("DROP TABLE chunks_bi")
+            conn.execute(
+                "CREATE VIRTUAL TABLE chunks_bi USING fts5("
+                "bi, content='chunks', content_rowid='id',"
+                " tokenize='unicode61')")
+            conn.commit()
+        done = conn.execute(
+            "SELECT COUNT(*) FROM chunks WHERE bi != ''").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM chunks").fetchone()[0]
+        print(f"bi 列填充：{done}/{total}", flush=True)
         while True:
             rows = conn.execute(
-                "SELECT c.id, c.text FROM chunks c"
-                " LEFT JOIN chunks_bi bi ON bi.rowid = c.id"
-                " WHERE bi.rowid IS NULL LIMIT ?", (batch,)).fetchall()
+                "SELECT id, text FROM chunks WHERE bi = '' LIMIT 50000"
+            ).fetchall()
             if not rows:
                 break
             with conn:
-                for cid, text in rows:
-                    conn.execute(
-                        "INSERT INTO chunks_bi(rowid, bi) VALUES(?,?)",
-                        (cid, _bigrams(text)))
-            total += len(rows)
-            print(f"  二元索引补建 {total}...", flush=True)
-        conn.execute("INSERT INTO chunks_bi(chunks_bi) VALUES('optimize')")
+                conn.executemany(
+                    "UPDATE chunks SET bi=? WHERE id=?",
+                    [(_bigrams(t), cid) for cid, t in rows])
+            done += len(rows)
+            print(f"  bi 列 {done}/{total}", flush=True)
+        print("整建二元索引（rebuild，C 层批量）...", flush=True)
+        conn.execute("DELETE FROM chunks_bi")
+        conn.execute("INSERT INTO chunks_bi(chunks_bi) VALUES('rebuild')")
         conn.commit()
-        return total
+        print("二元索引整建完成", flush=True)
     finally:
         conn.close()
 
