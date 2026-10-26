@@ -46,7 +46,7 @@ contracts/corpus.md ✅、quickstart.md ✅
 - [x] T006 [US1] `scripts/corpus_ingest.py` 批量 CLI：walk 藏书目录
   （目录一二层 → category_l1/l2）、逐部 ingest、进度输出、终报
   {total, ingested, skipped, empty, failed}
-- [ ] T007 [US1] 真机全量入库（后台）：藏书根目录 → data/corpus.db，
+- [x] T007 [US1] 真机全量入库（后台）：藏书根目录 → data/corpus.db，
   验收 SC-001（完成率 ≥99%）+ SC-002（皇城司/茶肆/夜市命中篇目级出处）
 
 **Checkpoint**: US1 离线全绿 + 全量库可用
