@@ -358,12 +358,19 @@ def browse(db_path: str, category_l1: str | None = None,
         conn.close()
 
 
-def backfill_bigrams(db_path: str, batch: int = 20000) -> int:
-    """既有库补建二元索引（迁移用）。返回补建行数。"""
+def backfill_bigrams(db_path: str, batch: int = 50000) -> int:
+    """既有库补建二元索引（迁移用）。返回补建行数。
+
+    迁移期提速：synchronous=OFF + journal_mode=MEMORY（崩了重跑即可，
+    幂等）；结束做 FTS optimize 合并段。
+    """
     init_corpus(db_path)
     conn = sqlite3.connect(db_path)
     total = 0
     try:
+        conn.execute("PRAGMA synchronous=OFF")
+        conn.execute("PRAGMA journal_mode=MEMORY")
+        conn.execute("PRAGMA temp_store=MEMORY")
         while True:
             rows = conn.execute(
                 "SELECT c.id, c.text FROM chunks c"
@@ -378,6 +385,8 @@ def backfill_bigrams(db_path: str, batch: int = 20000) -> int:
                         (cid, _bigrams(text)))
             total += len(rows)
             print(f"  二元索引补建 {total}...", flush=True)
+        conn.execute("INSERT INTO chunks_bi(chunks_bi) VALUES('optimize')")
+        conn.commit()
         return total
     finally:
         conn.close()
