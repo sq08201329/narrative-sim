@@ -265,7 +265,8 @@ DEEP_OK = {"status": "success", "research_id": "r", "query": "q",
 
 def test_research_material_stores_truncated(store, monkeypatch):
     monkeypatch.setenv("RESEARCH_MATERIAL_MAX_CHARS", "50")
-    row_id = research_material("临安酒楼", store, call_tool=lambda n, a: DEEP_OK)
+    row_id = research_material("临安酒楼", store, call_tool=lambda n, a: DEEP_OK,
+                               use_corpus=False)  # 测 web 腿截断（016 双村腿并存）
     assert row_id >= 1
     ms = store.get_materials("lore:research")
     assert len(ms) == 1
