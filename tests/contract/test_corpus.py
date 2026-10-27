@@ -318,3 +318,119 @@ def test_rerank_cost_gate(tmp_path):
     r = search(db, "夜禁", rerank=True,
                embed=lambda t: called.append(t) or [1.0])
     assert r["hits"] and called == []  # 单块不重排
+
+
+# ---------- 017：同名来源与保守元数据 ----------
+
+def test_same_name_different_paths_are_preserved(corpus_db, tmp_path):
+    first = tmp_path / "地理" / "华阳国志-晋-常璩.txt"
+    second = tmp_path / "载记" / "华阳国志-晋-常璩.txt"
+    first.parent.mkdir()
+    second.parent.mkdir()
+    first.write_text("地理版本。成都沿革。", encoding="utf-8")
+    second.write_text("载记版本。南中志略。", encoding="utf-8")
+
+    one = ingest_book(corpus_db, str(first), "史藏", "地理")
+    two = ingest_book(corpus_db, str(second), "史藏", "载记")
+    again = ingest_book(corpus_db, str(first), "史藏", "地理")
+
+    assert one["book_id"] == "华阳国志_晋_常璩"
+    assert two["book_id"] != one["book_id"]
+    assert again["status"] == "skipped"
+    assert stats(corpus_db)["books"] == 2
+    assert search(corpus_db, "成都")["hits"][0]["book_id"] == one["book_id"]
+    assert search(corpus_db, "南中")["hits"][0]["book_id"] == two["book_id"]
+
+
+def test_same_name_same_content_keeps_both_sources(corpus_db, tmp_path):
+    paths = [tmp_path / "甲" / "佛说阿弥陀经--.txt",
+             tmp_path / "乙" / "佛说阿弥陀经--.txt"]
+    for p in paths:
+        p.parent.mkdir()
+        p.write_text("同一份经文。", encoding="utf-8")
+        ingest_book(corpus_db, str(p))
+    assert stats(corpus_db)["books"] == 2
+
+
+def test_series_filename_metadata(corpus_db, tmp_path):
+    p = tmp_path / "正统道藏太平部-重阳全真集-金-王嚞.txt"
+    p.write_text("道藏正文。", encoding="utf-8")
+    ingest_book(corpus_db, str(p), "03道藏-1689部", "04正统道藏太平部-65部")
+    b = browse(corpus_db)[0]
+    assert (b["title"], b["dynasty"], b["author"]) == ("重阳全真集", "金", "王嚞")
+
+
+def test_blank_metadata_and_copy_suffix(corpus_db, tmp_path):
+    blank = tmp_path / "佛说阿弥陀经--.txt"
+    copy = tmp_path / "园冶-明-计成 - 副本.txt"
+    volume = tmp_path / "朱子治家格言-明-朱柏庐-计1卷.txt"
+    joined_volume = tmp_path / "海忠介公全集-明-海瑞12卷.txt"
+    same_as_category = tmp_path / "笔记-宋-宋祁.txt"
+    anonymous = tmp_path / "正统道藏太玄部-周易参同契注---佚名.txt"
+    for p in (blank, copy, volume, joined_volume, same_as_category, anonymous):
+        p.write_text(p.stem + "正文。", encoding="utf-8")
+        ingest_book(corpus_db, str(p), "集藏", p.stem.split("-")[0])
+    rows = {b["title"]: b for b in browse(corpus_db)}
+    assert (rows["佛说阿弥陀经"]["dynasty"], rows["佛说阿弥陀经"]["author"]) == ("", "")
+    assert rows["园冶"]["author"] == "计成"
+    assert rows["朱子治家格言"]["author"] == "朱柏庐"
+    assert rows["海忠介公全集"]["author"] == "海瑞"
+    assert (rows["笔记"]["dynasty"], rows["笔记"]["author"]) == ("宋", "宋祁")
+    assert rows["周易参同契注"]["author"] == "佚名"
+
+
+def test_ambiguous_dynasty_leaves_fields_empty(corpus_db, tmp_path):
+    p = tmp_path / "唐宋异闻-宋-唐-宋-张三.txt"
+    p.write_text("", encoding="utf-8")
+    ingest_book(corpus_db, str(p))
+    b = browse(corpus_db)[0]
+    assert b["dynasty"] == b["author"] == ""
+    assert "metadata_unresolved" in b["note"]
+    assert stats(corpus_db)["empty"] == 1
+
+
+def test_repair_recovers_sources_without_changing_old_chunks(corpus_db, tmp_path,
+                                                              monkeypatch):
+    import db.corpus as corpus
+
+    root = tmp_path / "藏书"
+    first = root / "史藏" / "地理" / "华阳国志-晋-常璩.txt"
+    second = root / "史藏" / "载记" / "华阳国志-晋-常璩.txt"
+    series = (root / "道藏" / "04正统道藏太平部-65部"
+              / "正统道藏太平部-重阳全真集-金-王嚞.txt")
+    empty = root / "佛藏" / "经部" / "空书--.txt"
+    for p in (first, second, series, empty):
+        p.parent.mkdir(parents=True, exist_ok=True)
+    first.write_text("地理版本。茶肆沿革。", encoding="utf-8")
+    second.write_text("载记版本。南中志略。", encoding="utf-8")
+    series.write_text("道藏正文。", encoding="utf-8")
+    empty.write_text("　　只有篇目标题", encoding="utf-8")
+    original_parser = corpus._parse_metadata
+    monkeypatch.setattr(corpus, "_parse_metadata",
+                        lambda name, category="": ("错误书名", "错误朝代", "错误作者", ""))
+    ingest_book(corpus_db, str(first), "史藏", "地理")
+    ingest_book(corpus_db, str(series), "道藏", "正统道藏太平部")
+    monkeypatch.setattr(corpus, "_parse_metadata", original_parser)
+
+    target = tmp_path / "repaired.db"
+    report_path = tmp_path / "repair.json"
+    report = corpus.repair_corpus(corpus_db, str(target), str(root), str(report_path))
+
+    assert stats(corpus_db)["books"] == 2
+    assert stats(str(target))["books"] == 4
+    assert report["validation"]["old_chunks_preserved"] is True
+    assert report["validation"]["content_hashes_match"] is True
+    assert len(report["recovered"]) == 2
+    assert len(report["metadata_changes"]) == 2
+    rows = {b["title"]: b for b in browse(str(target))}
+    assert rows["重阳全真集"]["dynasty"] == "金"
+    assert rows["华阳国志"]["author"] == "常璩"
+    assert search(str(target), "南中")["hits"]
+    assert report_path.exists()
+
+    second_target = tmp_path / "repaired-again.db"
+    second_report = corpus.repair_corpus(
+        str(target), str(second_target), str(root), str(tmp_path / "again.json"))
+    assert second_report["recovered"] == []
+    assert second_report["metadata_changes"] == []
+    assert stats(str(second_target)) == stats(str(target))
