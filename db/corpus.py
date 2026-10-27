@@ -98,11 +98,66 @@ def _read_text(path: Path) -> tuple[str, str]:
     return raw.decode("gb18030", errors="replace"), "encoding_lossy"
 
 
+_DYNASTIES = frozenset({
+    "夏", "商", "周", "西周", "东周", "春秋", "战国", "秦", "汉", "西汉",
+    "东汉", "三国", "魏", "蜀汉", "吴", "晋", "西晋", "东晋", "南北朝",
+    "南朝", "北朝", "宋", "南朝宋", "齐", "梁", "陈", "北魏", "东魏",
+    "西魏", "北齐", "北周", "隋", "唐", "五代", "五代十国", "后梁",
+    "后唐", "后晋", "后汉", "后周", "十国", "前蜀", "后蜀", "南唐",
+    "南汉", "北汉", "北宋", "南宋", "辽", "金", "西夏", "元", "明",
+    "清", "民国", "中华民国",
+})
+_VOLUME_RE = re.compile(r"^(?:计|共|·)?[\d一二三四五六七八九十百〇零]+卷$")
+
+
+def _category_label(value: str) -> str:
+    return re.sub(r"-\d+部$", "", re.sub(r"^\d+", "", value)).strip()
+
+
+def _parse_metadata(name: str, category_l2: str = "") -> tuple[str, str, str, str]:
+    stem = Path(name).stem
+    parts = [part.strip() for part in stem.split("-")]
+    parts = [part for part in parts if part and part != "副本"]
+    while parts and _VOLUME_RE.fullmatch(parts[-1]):
+        parts.pop()
+    if not parts:
+        return stem, "", "", "metadata_unresolved"
+
+    label = _category_label(category_l2)
+    series_suffix = parts[0][len(label):] if label else ""
+    series_match = bool(label) and (
+        parts[0] == label or (series_suffix.endswith("类")
+                              and len(series_suffix) <= 4))
+    if len(parts) > 1 and series_match and parts[1] not in _DYNASTIES:
+        parts = parts[1:]
+    dynasty_indexes = [i for i, part in enumerate(parts) if part in _DYNASTIES]
+    unresolved = ""
+    if len(dynasty_indexes) > 1:
+        return "-".join(parts), "", "", "metadata_unresolved"
+
+    if not dynasty_indexes:
+        if len(parts) > 1 and parts[-1] == "佚名":
+            return "-".join(parts[:-1]), "", "佚名", ""
+        return "-".join(parts) or stem, "", "", unresolved
+    i = dynasty_indexes[0]
+    dynasty = parts[i]
+    author = parts[i + 1] if i + 1 < len(parts) else ""
+    author = re.sub(r"\d+(?:卷|回)?$", "", author).strip()
+    if i + 1 < len(parts) and not author:
+        unresolved = "metadata_unresolved"
+        dynasty = ""
+    title_parts = parts[:i]
+    if author and i + 2 < len(parts):
+        title_parts += parts[i + 2:]
+    title = "-".join(title_parts).strip()
+    if not title:
+        return stem, "", "", "metadata_unresolved"
+    return title, dynasty, author, unresolved
+
+
 def _parse_filename(name: str) -> tuple[str, str, str]:
-    m = re.match(r"(.+?)-([^-]+)-(.+)\.txt$", name)
-    if m:
-        return m.group(1), m.group(2), m.group(3)
-    return name.removesuffix(".txt"), "", ""
+    title, dynasty, author, _ = _parse_metadata(name)
+    return title, dynasty, author
 
 
 def _is_heading(line: str) -> bool:
@@ -171,13 +226,27 @@ def _chunk(text: str, size: int = 500) -> tuple[list[tuple[str, str, str]], bool
     return out, no_punct
 
 
+def _book_id(conn: sqlite3.Connection, path: Path) -> str:
+    base = re.sub(r"\W+", "_", path.stem)
+    row = conn.execute("SELECT path FROM books WHERE book_id=?", (base,)).fetchone()
+    if row is None or Path(row[0]).resolve() == path.resolve():
+        return base
+    digest = hashlib.sha256(str(path.resolve()).encode("utf-8")).hexdigest()[:12]
+    candidate = f"{base}_{digest}"
+    row = conn.execute(
+        "SELECT path FROM books WHERE book_id=?", (candidate,)).fetchone()
+    if row is not None and Path(row[0]).resolve() != path.resolve():
+        raise ValueError(f"book_id 路径哈希冲突: {path}")
+    return candidate
+
+
 def ingest_book(db_path: str, txt_path: str,
                 category_l1: str = "", category_l2: str = "") -> dict:
     """单书入库（契约 §1）：幂等/失败登记/事务内 FTS 同步。"""
     p = Path(txt_path)
-    title, dynasty, author = _parse_filename(p.name)
-    book_id = re.sub(r"\W+", "_", p.stem)
-    base = {"book_id": book_id, "chunks": 0, "chars": 0, "note": ""}
+    title, dynasty, author, metadata_note = _parse_metadata(p.name, category_l2)
+    base = {"book_id": re.sub(r"\W+", "_", p.stem),
+            "chunks": 0, "chars": 0, "note": ""}
     try:
         text, enc_note = _read_text(p)
     except (OSError, ValueError) as e:
@@ -186,6 +255,8 @@ def ingest_book(db_path: str, txt_path: str,
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     conn = sqlite3.connect(db_path)
     try:
+        book_id = _book_id(conn, p)
+        base["book_id"] = book_id
         row = conn.execute(
             "SELECT content_hash FROM books WHERE book_id=?", (book_id,)
         ).fetchone()
@@ -193,10 +264,9 @@ def ingest_book(db_path: str, txt_path: str,
             return {**base, "status": "skipped"}
 
         blocks, no_punct = _chunk(text)
-        note = " ".join(x for x in (enc_note,
-                        "no_punct_fallback" if no_punct else "") if x)
-        if not blocks:
-            note = "empty"
+        note = " ".join(x for x in (
+            enc_note, "no_punct_fallback" if no_punct else "", metadata_note,
+            "empty" if not blocks else "") if x)
         with conn:  # 单书一事务：要么全进要么全滚回
             old = [r[0] for r in conn.execute(
                 "SELECT id FROM chunks WHERE book_id=?", (book_id,)).fetchall()]
@@ -419,6 +489,173 @@ def backfill_bigrams(db_path: str) -> None:
         conn.close()
 
 
+def repair_corpus(source_db: str, target_db: str, source_root: str,
+                  report_path: str) -> dict:
+    """在线备份后修复书目；源库只读，目标库必须不存在。"""
+    import json
+
+    source = Path(source_db).resolve()
+    target = Path(target_db).resolve()
+    root = Path(source_root).resolve()
+    report_file = Path(report_path)
+    if target.exists():
+        raise FileExistsError(f"目标库已存在: {target}")
+    if source == target:
+        raise ValueError("目标库不得与源库相同")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    files = sorted(root.rglob("*.txt"))
+
+    old = sqlite3.connect(f"file:{source.as_posix()}?mode=ro", uri=True)
+    new = sqlite3.connect(target)
+    try:
+        old.backup(new)
+    finally:
+        old.close()
+        new.close()
+
+    conn = sqlite3.connect(target)
+    conn.row_factory = sqlite3.Row
+    report = {
+        "source_txt": len(files),
+        "before_books": 0,
+        "after_books": 0,
+        "expected_nonempty": 0,
+        "collisions": [],
+        "recovered": [],
+        "metadata_changes": [],
+        "anomalies": [],
+        "failures": [],
+        "validation": {},
+    }
+    try:
+        rows = conn.execute("SELECT * FROM books").fetchall()
+        report["before_books"] = len(rows)
+        by_path = {str(Path(r["path"]).resolve()).casefold(): r for r in rows}
+        expected_paths = set()
+        expected_hashes = {}
+        expected_empty = 0
+        updates = []
+        recoveries = []
+        for path in files:
+            rel = path.relative_to(root)
+            parts = rel.parts[:-1]
+            l1 = parts[0] if parts else ""
+            l2 = parts[1] if len(parts) > 1 else ""
+            key = str(path.resolve()).casefold()
+            expected_paths.add(key)
+            text, _ = _read_text(path)
+            expected_hashes[key] = hashlib.sha256(
+                text.encode("utf-8")).hexdigest()
+            if not _chunk(text)[0]:
+                expected_empty += 1
+            title, dynasty, author, metadata_note = _parse_metadata(path.name, l2)
+            if metadata_note:
+                report["anomalies"].append(
+                    {"path": str(path), "reason": metadata_note})
+            existing = by_path.get(key)
+            if existing is not None:
+                changed = {
+                    field: {"before": existing[field], "after": value}
+                    for field, value in (("title", title), ("dynasty", dynasty),
+                                         ("author", author))
+                    if existing[field] != value
+                }
+                notes = [n for n in existing["note"].split()
+                         if n != "metadata_unresolved"]
+                if metadata_note:
+                    notes.append(metadata_note)
+                note = " ".join(notes)
+                if changed or note != existing["note"]:
+                    updates.append((title, dynasty, author, l1, l2, note,
+                                    existing["book_id"]))
+                if changed:
+                    report["metadata_changes"].append(
+                        {"path": str(path), "book_id": existing["book_id"],
+                         "changes": changed})
+                continue
+
+            base_id = re.sub(r"\W+", "_", path.stem)
+            collision = conn.execute(
+                "SELECT path FROM books WHERE book_id=?", (base_id,)).fetchone()
+            if collision:
+                report["collisions"].append(
+                    {"base_id": base_id, "existing_path": collision["path"],
+                     "recovered_path": str(path)})
+            entry = {"path": str(path), "book_id": _book_id(conn, path),
+                     "chunks": 0, "chars": 0}
+            report["recovered"].append(entry)
+            recoveries.append((path, l1, l2, entry))
+
+        report["phase"] = "preflight"
+        report_file.parent.mkdir(parents=True, exist_ok=True)
+        report_file.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+        with conn:
+            conn.executemany(
+                "UPDATE books SET title=?, dynasty=?, author=?, category_l1=?,"
+                " category_l2=?, note=? WHERE book_id=?", updates)
+        for path, l1, l2, entry in recoveries:
+            try:
+                result = ingest_book(str(target), str(path), l1, l2)
+                if result["status"] == "failed":
+                    report["failures"].append(
+                        {"path": str(path), "reason": result["note"]})
+                    report["recovered"].remove(entry)
+                else:
+                    entry.update(chunks=result["chunks"], chars=result["chars"])
+            except Exception as exc:
+                report["failures"].append(
+                    {"path": str(path), "reason": f"{type(exc).__name__}: {exc}"})
+                report["recovered"].remove(entry)
+
+        current_rows = conn.execute("SELECT * FROM books").fetchall()
+        current_by_path = {
+            str(Path(r["path"]).resolve()).casefold(): r for r in current_rows}
+        report["after_books"] = len(current_rows)
+        report["expected_nonempty"] = len(files) - expected_empty
+        paths_match = set(current_by_path) == expected_paths
+        hashes_match = paths_match and all(
+            current_by_path[key]["content_hash"] == digest
+            for key, digest in expected_hashes.items())
+
+        conn.execute("ATTACH DATABASE ? AS original", (str(source),))
+        chunk_columns = "id, book_id, seq, chapter, section, heading_path, text, bi"
+        old_chunk_delta = conn.execute(
+            "SELECT COUNT(*) FROM original.chunks o LEFT JOIN main.chunks n"
+            " ON n.id=o.id WHERE n.id IS NULL OR "
+            + " OR ".join(f"n.{col} != o.{col}"
+                          for col in chunk_columns.split(", ")[1:])
+        ).fetchone()[0]
+        old_book_delta = conn.execute(
+            "SELECT COUNT(*) FROM original.books o LEFT JOIN main.books b"
+            " ON b.book_id=o.book_id WHERE b.book_id IS NULL OR b.path!=o.path"
+            " OR b.chunk_count!=o.chunk_count OR b.char_count!=o.char_count"
+        ).fetchone()[0]
+        conn.execute("DETACH DATABASE original")
+        search_counts = {
+            query: len(search(str(target), query)["hits"])
+            for query in ("茶肆", "皇城司", "夜市")
+        }
+        report["phase"] = "validated"
+        report["validation"] = {
+            "paths_match": paths_match,
+            "content_hashes_match": hashes_match,
+            "old_chunks_preserved": old_chunk_delta == 0,
+            "old_book_metrics_preserved": old_book_delta == 0,
+            "empty_count_matches": stats(str(target))["empty"] == expected_empty,
+            "search_counts": search_counts,
+            "no_failures": not report["failures"],
+        }
+        report_file.write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                               encoding="utf-8")
+        if not all(value for key, value in report["validation"].items()
+                   if key != "search_counts"):
+            raise RuntimeError(f"修复校验失败，源库未修改: {report_file}")
+        return report
+    finally:
+        conn.close()
+
+
 def stats(db_path: str) -> dict:
     conn = sqlite3.connect(db_path)
     try:
@@ -430,7 +667,8 @@ def stats(db_path: str) -> dict:
             "SELECT COUNT(*) FROM books WHERE note LIKE 'failed%' OR"
             " note LIKE '%编码不可识别%'").fetchone()[0]
         empty = conn.execute(
-            "SELECT COUNT(*) FROM books WHERE note='empty'").fetchone()[0]
+            "SELECT COUNT(*) FROM books WHERE ' ' || note || ' '"
+            " LIKE '% empty %'").fetchone()[0]
         return {"books": books, "chunks": chunks, "chars": chars,
                 "failed": failed, "empty": empty}
     finally:
