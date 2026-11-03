@@ -1,6 +1,7 @@
 """构建 Windows 免安装目录与 ZIP；不读取用户配置或数据库。"""
 import importlib.metadata
 import json
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -20,6 +21,7 @@ def main() -> int:
         cwd=ROOT, check=True)
     (APP / "README.md").write_text((ROOT / "README.md").read_text(encoding="utf-8"),
                                   encoding="utf-8")
+    shutil.copyfile(ROOT / ".env.example", APP / ".env.example")
     with (ROOT / "pyproject.toml").open("rb") as stream:
         version = tomllib.load(stream)["project"]["version"]
     info = {

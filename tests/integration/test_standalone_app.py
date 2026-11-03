@@ -46,17 +46,17 @@ def test_frozen_offline_workflow_from_other_cwd(tmp_path):
     base = [str(EXE), "--home", str(home), "--db", str(db)]
     created = subprocess.run([*base, "world", "create", "w_frozen", "--characters",
                               CHARACTER["asset_id"], "--location", SCENE["asset_id"]],
-                             cwd=cwd, env=env_for(home), capture_output=True, text=True)
+                             cwd=cwd, env=env_for(home), capture_output=True, text=True, encoding="utf-8")
     assert created.returncode == 0, created.stderr
     assert json.loads(created.stdout)["world_id"] == "w_frozen"
     run = subprocess.run([*base, "run", "w_frozen", "--run-id", "r_frozen",
                           "--ticks", "4", "--backend", "mock"],
-                         cwd=cwd, env=env_for(home), capture_output=True, text=True)
+                         cwd=cwd, env=env_for(home), capture_output=True, text=True, encoding="utf-8")
     assert run.returncode == 0, run.stderr
     assert json.loads(run.stdout)["event_count"] == 5
     out = home / "exports/events.jsonl"
     exported = subprocess.run([*base, "export", "r_frozen", "--out", str(out)],
-                              cwd=cwd, env=env_for(home), capture_output=True, text=True)
+                              cwd=cwd, env=env_for(home), capture_output=True, text=True, encoding="utf-8")
     assert exported.returncode == 0, exported.stderr
     assert len(out.read_text(encoding="utf-8").splitlines()) == 5
     assert (home / "config.ini").is_file()
@@ -156,3 +156,25 @@ def test_frozen_gptr_health_and_stop(tmp_path):
     finally:
         process.terminate()
         process.wait(timeout=10)
+
+
+def test_frozen_init_distributes_templates_without_overwrite(tmp_path):
+    home = tmp_path / "中文 home"
+    result = subprocess.run([str(EXE), "--home", str(home), "init"],
+                            env=env_for(home), capture_output=True, text=True, encoding="utf-8")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert all(item["status"] == "created" for item in payload["files"])
+    skill = home / "skills/narrative-sim/SKILL.md"
+    assert skill.read_bytes() == (ROOT / "resources/skills/narrative-sim/SKILL.md").read_bytes()
+    assert (APP / ".env.example").is_file()
+    assert (APP / "_internal/resources/skills/narrative-sim/SKILL.md").is_file()
+
+    skill.write_text("custom", encoding="utf-8")
+    (home / ".env").write_text("custom", encoding="utf-8")
+    again = subprocess.run([str(EXE), "--home", str(home), "init"],
+                           env=env_for(home), capture_output=True, text=True, encoding="utf-8")
+    assert again.returncode == 0
+    assert all(item["status"] == "existing" for item in json.loads(again.stdout)["files"])
+    assert skill.read_text(encoding="utf-8") == "custom"
+    assert (home / ".env").read_text(encoding="utf-8") == "custom"

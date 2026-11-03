@@ -121,6 +121,12 @@ uv run python scripts/build_standalone.py
 `config.ini` 仅首次复制，升级程序目录不会覆盖用户修改。模型仍需通过
 `EMBEDDING_MODEL_FILE` 外置配置，真实调研仍需凭据和网络。
 
+首次使用可先执行 `uv run narrative init`；冻结版执行 `NarrativeSim.exe init`。
+初始化创建数据、日志、运行状态、模型、缓存和技能目录，并首次生成 `config.ini`、
+`.env` 与 `skills/narrative-sim/SKILL.md`。已有文件一律不覆盖，不启动服务或下载模型。
+发行包同时携带 `.env.example` 和技能模板；技能向 Agent 说明 CLI、MCP、三库分工、
+典型工作流与安全约束。升级时替换程序目录并保留用户 HOME。
+
 ## 真后端链路（M2，TinyTroupe）
 
 1. 在 `.env` 填入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`（或 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`，由后端桥接）
