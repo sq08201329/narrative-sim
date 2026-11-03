@@ -8,10 +8,14 @@ dependencies = [
     "jsonschema>=4.26.0",
     "mcp>=2.3.0",
     "openai>=2,<3.35",
+    "psutil>=7.2.2",
     "python-dotenv>=1.2.4",
     "tinytroupe",
     "worldseed[dm]",
 ]
+
+[project.scripts]
+narrative = "orchestrator.cli:main"
 
 [dependency-groups]
 dev = [
@@ -22,6 +26,12 @@ dev = [
 markers = [
     "real: 需要真实 LLM 密钥的在线验收用例",
 ]
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["orchestrator*", "db*"]
 
 [tool.uv.sources]
 tinytroupe = { git = "https://github.com/microsoft/TinyTroupe.git", rev = "a6244b358a1fe1c71bf751f7ba0f8dfa368ec5a4" }

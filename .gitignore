@@ -33,6 +33,10 @@ tinytroupe.*.log
 # 测试产物
 data-gym-cache/
 pytest-of-Administrator/
+.cli-check/
+run/
+dist/
+*.egg-info/
 
 # 运行时产物：库备份、服务日志、团队启动脚本
 data/*.bak
