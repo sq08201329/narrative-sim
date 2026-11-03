@@ -10,7 +10,9 @@ from pathlib import Path
 
 import jsonschema
 
-ROOT = Path(__file__).resolve().parent.parent
+from .runtime import resource_root
+
+ROOT = resource_root()
 SCHEMA_DIR = ROOT / "schemas"
 
 

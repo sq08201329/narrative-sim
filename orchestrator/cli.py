@@ -1,13 +1,17 @@
 """narrative-sim 统一命令行入口。"""
 import argparse
+import contextlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
 import dotenv
 
-ROOT = Path(__file__).resolve().parent.parent
+from .runtime import default_home, is_frozen, resource_root
+
+ROOT = resource_root()
 
 
 def _positive_int(value: str) -> int:
@@ -66,11 +70,20 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--host", default=os.environ.get("MCP_HOST", "localhost"))
     mcp.add_argument("--port", type=_positive_int,
                      default=int(os.environ.get("MCP_PORT", "8300")))
+    commands.add_parser("_gptr", help=argparse.SUPPRESS)
     return parser
 
 
+def _prepare_user_home(home: Path) -> None:
+    home.mkdir(parents=True, exist_ok=True)
+    target = home / "config.ini"
+    source = ROOT / "config.ini"
+    if not target.exists() and source.is_file():
+        shutil.copyfile(source, target)
+
+
 def _paths(args) -> tuple[Path, Path, Path]:
-    home = Path(args.home or os.environ.get("NARRATIVE_HOME") or ROOT).resolve()
+    home = Path(args.home or os.environ.get("NARRATIVE_HOME") or default_home()).resolve()
     db = Path(args.db or os.environ.get("NARRATIVE_DB") or
               home / "data" / "projects" / "linan.db").resolve()
     library_db = Path(args.library_db or os.environ.get("LIBRARY_DB") or
@@ -80,6 +93,8 @@ def _paths(args) -> tuple[Path, Path, Path]:
 
 def _run_mcp(args, db: Path) -> int:
     os.environ["NARRATIVE_DB"] = str(db)
+    if is_frozen():
+        os.chdir(os.environ["NARRATIVE_HOME"])
     from .mcp_server import build_server
     server = build_server()
     if args.transport == "stdio":
@@ -102,11 +117,13 @@ def _dispatch(args, home: Path, db: Path, library_db: Path):
             str(db), args.world_id, characters, args.location,
             reset=args.reset, memory_from=args.memory_from)
     if args.command == "run":
-        return workflows.run_simulation(
-            str(db), args.world_id, args.run_id, args.ticks, backend=args.backend,
-            resume=args.resume, dm=args.dm, dm_max_calls=args.dm_max_calls,
-            dm_knowledge_chars=args.dm_knowledge_chars,
-            memory_from=args.memory_from)
+        context = contextlib.chdir(home) if is_frozen() else contextlib.nullcontext()
+        with context:
+            return workflows.run_simulation(
+                str(db), args.world_id, args.run_id, args.ticks, backend=args.backend,
+                resume=args.resume, dm=args.dm, dm_max_calls=args.dm_max_calls,
+                dm_knowledge_chars=args.dm_knowledge_chars,
+                memory_from=args.memory_from)
     if args.command == "export":
         return workflows.export_events(str(db), args.run_id, args.out)
     if args.command in {"start", "stop", "restart", "status"}:
@@ -116,13 +133,25 @@ def _dispatch(args, home: Path, db: Path, library_db: Path):
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     dotenv.load_dotenv(ROOT / ".env")
     args = build_parser().parse_args(argv)
-    home, db, library_db = _paths(args)
-    os.environ["NARRATIVE_HOME"] = str(home)
-    os.environ["NARRATIVE_DB"] = str(db)
-    os.environ["LIBRARY_DB"] = str(library_db)
     try:
+        home, db, library_db = _paths(args)
+        _prepare_user_home(home)
+        if is_frozen():
+            dotenv.load_dotenv(home / ".env")
+            home, db, library_db = _paths(args)
+            _prepare_user_home(home)
+        os.environ["NARRATIVE_HOME"] = str(home)
+        os.environ["NARRATIVE_DB"] = str(db)
+        os.environ["LIBRARY_DB"] = str(library_db)
+        if args.command == "_gptr":
+            import server
+            server.run_server()
+            return 0
         if args.command == "mcp":
             return _run_mcp(args, db)
         result = _dispatch(args, home, db, library_db)

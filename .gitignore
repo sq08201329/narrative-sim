@@ -36,7 +36,9 @@ data-gym-cache/
 pytest-of-Administrator/
 .cli-check/
 .portable-check/
+.standalone-check/
 run/
+build/
 dist/
 *.egg-info/
 

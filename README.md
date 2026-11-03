@@ -54,6 +54,18 @@ WorldSeed、GPT-Researcher、gptr-mcp 和检索插件都在仓库的 uv workspac
 `EMBEDDING_MODEL_FILE` 默认 `models/model.litertlm`；模型、数据库与 `.env` 不入库。
 改变 HOME 不会自动迁移旧库，已有数据需按 `data/README.md` 显式迁移。
 
+## Windows 独立应用
+
+```bash
+uv run python scripts/build_standalone.py
+```
+
+产物为 `dist/NarrativeSim/NarrativeSim.exe` 与 `dist/NarrativeSim-windows-x64.zip`。
+解压后直接运行 `NarrativeSim.exe --help`，命令与开发版 `narrative` 一致，无需 Python/uv。
+冻结版默认用户目录为 `%LOCALAPPDATA%/NarrativeSim`，配置、三库、日志与导出均在用户目录；
+`config.ini` 仅首次复制，升级程序目录不会覆盖用户修改。模型仍需通过
+`EMBEDDING_MODEL_FILE` 外置配置，真实调研仍需凭据和网络。
+
 ## 真后端链路（M2，TinyTroupe）
 
 1. 在 `.env` 填入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`（或 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`，由后端桥接）
