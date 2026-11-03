@@ -108,7 +108,8 @@ class TinyTroupeBackend(PersonaBackend):
         """TinyTroupe 在包 import 瞬间按 cwd 建日志文件——换绑到 logs/。"""
         from pathlib import Path
         from .ttlog import redirect_tinytroupe_log
-        redirect_tinytroupe_log(Path(__file__).resolve().parent.parent)
+        root = os.environ.get("NARRATIVE_HOME") or Path(__file__).resolve().parent.parent
+        redirect_tinytroupe_log(Path(root))
 
     @staticmethod
     def _bridge_deepseek_env() -> None:

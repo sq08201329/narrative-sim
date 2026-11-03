@@ -13,7 +13,9 @@ from urllib.parse import urlsplit
 
 import psutil
 
-ROOT = Path(__file__).resolve().parent.parent
+from .runtime import is_frozen, resource_root
+
+ROOT = resource_root()
 
 
 class ServiceError(RuntimeError):
@@ -221,21 +223,25 @@ def _default_specs(home: Path, db: Path) -> list[ServiceSpec]:
         "OPENAI_API_KEY": key, "SMART_TOKEN_LIMIT": "8000",
         "STRATEGIC_TOKEN_LIMIT": "8000",
     }
+    frozen = is_frozen()
+    gptr_command = ([sys.executable, "_gptr"] if frozen else
+                    [sys.executable, str(ROOT / "packages" / "gptr-mcp" / "server.py")])
+    narrative_command = [sys.executable]
+    if not frozen:
+        narrative_command += ["-m", "orchestrator.cli"]
+    narrative_command += ["--home", str(home), "--db", str(db), "mcp",
+                          "--host", narrative_host, "--port", str(narrative_port)]
     return [
         ServiceSpec("embedding", [litert, "serve", "--host", embed_host,
                                   "--port", str(embed_port)], _model_file().parent,
                     embed_port, embed_health, "litert-lm", host=embed_host),
-        ServiceSpec("gptr-mcp", [sys.executable,
-                                 str(ROOT / "packages" / "gptr-mcp" / "server.py")],
-                    ROOT / "packages" / "gptr-mcp", gptr_port,
-                    gptr_health, "server.py", host=gptr_host, env=gptr_env),
-        ServiceSpec("narrative-sim", [
-            sys.executable, "-m", "orchestrator.cli", "--home", str(home),
-            "--db", str(db), "mcp", "--host", narrative_host,
-            "--port", str(narrative_port),
-        ], ROOT, narrative_port, "", "orchestrator.cli", host=narrative_host,
-            env={"NARRATIVE_HOME": str(home), "NARRATIVE_DB": str(db),
-                 "LIBRARY_DB": os.environ.get("LIBRARY_DB", "")}),
+        ServiceSpec("gptr-mcp", gptr_command, ROOT, gptr_port,
+                    gptr_health, "_gptr" if frozen else "server.py",
+                    host=gptr_host, env=gptr_env),
+        ServiceSpec("narrative-sim", narrative_command, ROOT, narrative_port, "",
+                    "mcp" if frozen else "orchestrator.cli", host=narrative_host,
+                    env={"NARRATIVE_HOME": str(home), "NARRATIVE_DB": str(db),
+                         "LIBRARY_DB": os.environ.get("LIBRARY_DB", "")}),
     ]
 
 
