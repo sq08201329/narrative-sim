@@ -434,3 +434,22 @@ def test_repair_recovers_sources_without_changing_old_chunks(corpus_db, tmp_path
     assert second_report["recovered"] == []
     assert second_report["metadata_changes"] == []
     assert stats(str(second_target)) == stats(str(target))
+
+
+def test_corpus_path_follows_home_and_explicit_override(tmp_path, monkeypatch):
+    from orchestrator import corpus as corpus_leg
+
+    home = tmp_path / "home"
+    derived = home / "data" / "corpus.db"
+    init_corpus(str(derived))
+    monkeypatch.setenv("NARRATIVE_HOME", str(home))
+    monkeypatch.delenv("CORPUS_DB", raising=False)
+    assert corpus_leg._db_path() == str(derived)
+
+    monkeypatch.setenv("CORPUS_DB", "")
+    assert corpus_leg._db_path() == str(derived)
+
+    custom = tmp_path / "custom.db"
+    init_corpus(str(custom))
+    monkeypatch.setenv("CORPUS_DB", str(custom))
+    assert corpus_leg._db_path() == str(custom)

@@ -26,6 +26,7 @@ Thumbs.db
 previz/previz_data.js
 images/
 handoff/
+models/
 logs/
 data/*.db
 tinytroupe.*.log
@@ -34,6 +35,7 @@ tinytroupe.*.log
 data-gym-cache/
 pytest-of-Administrator/
 .cli-check/
+.portable-check/
 run/
 dist/
 *.egg-info/

@@ -54,7 +54,9 @@
 - **影响**：资产从主库导到项目库时，参考图记录不会跟着走；项目库的参考图需在项目侧生成/登记。
 - **绕过**：把出图当作项目库本地产物（与路径、环境相关）；需要图时在目标库重新出图；`verify` 会把图片差异单列在 `images` 段，不当失败。
 
-## 9. 外部不可安装（内部版本）
+## 9. 外部不可安装（019 已解决）
+
+WorldSeed、GPT-Researcher 与 gptr-mcp 已收拢到仓库 uv workspace；以下历史记录不再构成当前限制。
 
 - **症状**：依赖 `worldseed[dm]` 来自本机 path（`pyproject.toml`：`worldseed = { path = "D:/kimicode_repos/projects/my_mas/WorldSeed", editable = true }`），且该工作副本带 3 行本地编码补丁（见 `docs/worldseed-local-patch/`）。裸 `pip install narrative-sim` / 干净 runner 无法解析这个 path，装不上。
 - **影响**：本项目当前**只能在具备 `my_mas/WorldSeed` 目录并打过该补丁的机器上安装运行**；PyPI 上的 `worldseed` 是**另一个发行版**（0.0.1，只有 `gui` extra，没有 `dm`），**不能替代**。对外发布/协作复现会被卡住；CI 也因此暂不可用。

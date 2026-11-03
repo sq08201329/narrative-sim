@@ -18,10 +18,12 @@ class CorpusUnavailable(RuntimeError):
 
 
 def _db_path() -> str:
-    p = os.environ.get(CORPUS_DB_ENV, _DEFAULT_DB)
-    if not Path(p).exists():
+    home = os.environ.get("NARRATIVE_HOME")
+    default = str(Path(home) / "data" / "corpus.db") if home else _DEFAULT_DB
+    p = Path(os.environ.get(CORPUS_DB_ENV) or default).resolve()
+    if not p.exists():
         raise CorpusUnavailable(f"古籍库不存在: {p}（先跑 corpus_ingest）")
-    return p
+    return str(p)
 
 
 def corpus_materials(query: str, store, top_k: int = 3,

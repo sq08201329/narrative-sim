@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastmcp-slim[server]>=4.1.1",
     "gptr-deepseek-retriever",
+    "gptr-mcp",
     "jsonschema>=4.26.0",
     "mcp>=2.3.0",
     "openai>=2,<3.35",
@@ -36,9 +37,14 @@ include = ["orchestrator*", "db*"]
 [tool.uv.sources]
 tinytroupe = { git = "https://github.com/microsoft/TinyTroupe.git", rev = "a6244b358a1fe1c71bf751f7ba0f8dfa368ec5a4" }
 gptr-deepseek-retriever = { workspace = true, editable = true }
-worldseed = { path = "D:/kimicode_repos/projects/my_mas/WorldSeed", editable = true }
+gptr-mcp = { workspace = true, editable = true }
+gpt-researcher = { workspace = true, editable = true }
+worldseed = { workspace = true, editable = true }
 
 [tool.uv.workspace]
 members = [
     "plugins/gptr-deepseek-retriever",
+    "packages/gptr-mcp",
+    "packages/gpt-researcher",
+    "packages/worldseed",
 ]

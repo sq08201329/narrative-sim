@@ -6,6 +6,11 @@
 
 两个库职责严格分离，不要混用。
 
+`NARRATIVE_HOME` 默认项目根目录，并派生剧目库 `data/projects/linan.db`、调研主库
+`data/library.db`、古籍库 `data/corpus.db`，以及 `logs/`、`run/`。三个数据库可分别由
+`NARRATIVE_DB`、`LIBRARY_DB`、`CORPUS_DB` 覆盖。改变 HOME 不会自动移动旧库；迁移时
+关闭服务并显式复制所需库到对应新位置，再配置路径并验收。
+
 | 文件 | 角色 | 内容 | 读写规则 |
 |------|------|------|----------|
 | `data/library.db` | **调研主库** | `assets` / `asset_revisions` / `research_materials`；**0 世界 0 事件** | 调研（`research_asset` / `research_brief`）**只写这里**；资产修订也在这里做 |
