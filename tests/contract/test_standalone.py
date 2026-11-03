@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from orchestrator import cli, runtime, services
+from orchestrator import cli, init_app, runtime, services
 
 
 def test_frozen_resource_root_and_user_home(tmp_path, monkeypatch):
@@ -21,7 +21,7 @@ def test_development_home_remains_repository_root(monkeypatch):
 def test_user_config_is_copied_only_once(tmp_path, monkeypatch):
     source = tmp_path / "config.ini"
     source.write_text("default", encoding="utf-8")
-    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    monkeypatch.setattr(init_app, "TEMPLATES", [(Path("config.ini"), source)])
     home = tmp_path / "home"
     cli._prepare_user_home(home)
     config = home / "config.ini"

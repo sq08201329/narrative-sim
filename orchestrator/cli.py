@@ -3,7 +3,6 @@ import argparse
 import contextlib
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -34,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
                             ("restart", "重启完整技术栈"),
                             ("status", "查看技术栈状态")):
         commands.add_parser(name, help=help_text)
+
+    commands.add_parser("init", help="初始化用户目录、配置模板与使用技能")
 
     research = commands.add_parser("research", help="调研资产并入库")
     research.add_argument("query")
@@ -75,11 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _prepare_user_home(home: Path) -> None:
-    home.mkdir(parents=True, exist_ok=True)
-    target = home / "config.ini"
-    source = ROOT / "config.ini"
-    if not target.exists() and source.is_file():
-        shutil.copyfile(source, target)
+    from .init_app import initialize
+    initialize(home)
 
 
 def _paths(args) -> tuple[Path, Path, Path]:
@@ -105,6 +103,9 @@ def _run_mcp(args, db: Path) -> int:
 
 
 def _dispatch(args, home: Path, db: Path, library_db: Path):
+    if args.command == "init":
+        from .init_app import initialize
+        return initialize(home)
     from . import workflows
 
     if args.command == "research":
@@ -140,11 +141,13 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         home, db, library_db = _paths(args)
-        _prepare_user_home(home)
+        if args.command != "init":
+            _prepare_user_home(home)
         if is_frozen():
             dotenv.load_dotenv(home / ".env")
             home, db, library_db = _paths(args)
-            _prepare_user_home(home)
+            if args.command != "init":
+                _prepare_user_home(home)
         os.environ["NARRATIVE_HOME"] = str(home)
         os.environ["NARRATIVE_DB"] = str(db)
         os.environ["LIBRARY_DB"] = str(library_db)

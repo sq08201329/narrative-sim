@@ -6,6 +6,8 @@ ROOT = Path.cwd().resolve()
 datas = [
     (str(ROOT / "schemas"), "schemas"),
     (str(ROOT / "config.ini"), "."),
+    (str(ROOT / ".env.example"), "."),
+    (str(ROOT / "resources"), "resources"),
     (str(ROOT / "packages/worldseed/shared"), "shared"),
     (str(ROOT / "packages/worldseed/configs"), "configs"),
 ]
