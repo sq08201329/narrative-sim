@@ -41,8 +41,18 @@ uv run narrative mcp                   # 前台 MCP；stdio 模式加 --transpor
 `--home` / `NARRATIVE_HOME` 默认项目根目录；`--db` / `NARRATIVE_DB` 默认
 `<home>/data/projects/linan.db`，只用于剧目世界与仿真。`research` 使用独立的
 `--library-db` / `LIBRARY_DB`，默认 `<home>/data/library.db`。命令参数优先于环境变量。
-日志在 `<home>/logs`，受管服务状态在 `<home>/run`。原 `scripts/start_stack.ps1`
-和各链路脚本继续保留。
+古籍库默认 `<home>/data/corpus.db`，可由 `CORPUS_DB` 覆盖。日志在 `<home>/logs`，
+受管服务状态在 `<home>/run`。原 `scripts/start_stack.ps1` 和各链路脚本继续保留。
+
+## 可迁移安装
+
+WorldSeed、GPT-Researcher、gptr-mcp 和检索插件都在仓库的 uv workspace 中，新目录只需
+执行 `uv sync`，不再需要原开发机的外部项目目录或第二套虚拟环境。上游版本与许可证见
+`packages/*/UPSTREAM.md`。
+
+真实嵌入服务还需安装 LiteRT-LM 并准备模型文件。`LITERT_LM` 可为 PATH 名称或程序路径，
+`EMBEDDING_MODEL_FILE` 默认 `models/model.litertlm`；模型、数据库与 `.env` 不入库。
+改变 HOME 不会自动迁移旧库，已有数据需按 `data/README.md` 显式迁移。
 
 ## 真后端链路（M2，TinyTroupe）
 

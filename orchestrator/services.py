@@ -201,15 +201,17 @@ def _service_address(variable: str, health_path: str) -> tuple[str, int, str]:
     return parsed.hostname, port, origin + health_path
 
 
+def _model_file() -> Path:
+    return Path(os.environ.get("EMBEDDING_MODEL_FILE") or
+                ROOT / "models" / "model.litertlm").resolve()
+
+
 def _default_specs(home: Path, db: Path) -> list[ServiceSpec]:
     embed_host, embed_port, embed_health = _service_address(
         "EMBEDDING_API_BASE", "/v1/models")
     gptr_host, gptr_port, gptr_health = _service_address("GPTR_MCP_URL", "/health")
     narrative_host = os.environ.get("MCP_HOST", "localhost")
     narrative_port = int(os.environ.get("MCP_PORT", "8300"))
-    gptr_root = Path(os.environ.get("GPTR_ROOT") or
-                     r"D:\kimicode_repos\projects\my-gpt-research\gptr-mcp")
-    embed_root = Path(os.environ.get("EMBEDDING_ROOT") or r"D:\gh_projects\embeddinggemma-2")
     litert = os.environ.get("LITERT_LM") or shutil.which("litert-lm") or "litert-lm"
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     gptr_env = {
@@ -221,17 +223,19 @@ def _default_specs(home: Path, db: Path) -> list[ServiceSpec]:
     }
     return [
         ServiceSpec("embedding", [litert, "serve", "--host", embed_host,
-                                  "--port", str(embed_port)], embed_root, embed_port,
-                    embed_health, "litert-lm", host=embed_host),
-        ServiceSpec("gptr-mcp", [str(gptr_root / ".venv" / "Scripts" / "python.exe"),
-                                 "server.py"], gptr_root, gptr_port,
+                                  "--port", str(embed_port)], _model_file().parent,
+                    embed_port, embed_health, "litert-lm", host=embed_host),
+        ServiceSpec("gptr-mcp", [sys.executable,
+                                 str(ROOT / "packages" / "gptr-mcp" / "server.py")],
+                    ROOT / "packages" / "gptr-mcp", gptr_port,
                     gptr_health, "server.py", host=gptr_host, env=gptr_env),
         ServiceSpec("narrative-sim", [
             sys.executable, "-m", "orchestrator.cli", "--home", str(home),
             "--db", str(db), "mcp", "--host", narrative_host,
             "--port", str(narrative_port),
         ], ROOT, narrative_port, "", "orchestrator.cli", host=narrative_host,
-            env={"NARRATIVE_DB": str(db)}),
+            env={"NARRATIVE_HOME": str(home), "NARRATIVE_DB": str(db),
+                 "LIBRARY_DB": os.environ.get("LIBRARY_DB", "")}),
     ]
 
 
@@ -239,14 +243,19 @@ def _prepare_embedding() -> None:
     _, _, health = _service_address("EMBEDDING_API_BASE", "/v1/models")
     if _http_ready(health):
         return
-    root = Path(os.environ.get("EMBEDDING_ROOT") or r"D:\gh_projects\embeddinggemma-2")
     litert = os.environ.get("LITERT_LM") or shutil.which("litert-lm") or "litert-lm"
-    model = "eg2-text-270m.litertlm"
-    listed = subprocess.run([litert, "list"], capture_output=True, text=True)
+    model = os.environ.get("EMBEDDING_MODEL", "eg2-text-270m.litertlm")
+    try:
+        listed = subprocess.run([litert, "list"], capture_output=True, text=True)
+    except OSError as exc:
+        raise ServiceError(f"无法执行嵌入运行时，请检查 LITERT_LM: {exc}") from exc
     if listed.returncode != 0:
         raise ServiceError(f"无法查询嵌入模型，请检查 LITERT_LM: {listed.stderr.strip()}")
     if model not in listed.stdout:
-        imported = subprocess.run([litert, "import", str(root / "model.litertlm"), model],
+        model_file = _model_file()
+        if not model_file.is_file():
+            raise ServiceError(f"嵌入模型文件不存在: {model_file}；请配置 EMBEDDING_MODEL_FILE")
+        imported = subprocess.run([litert, "import", str(model_file), model],
                                   capture_output=True, text=True)
         if imported.returncode != 0:
             raise ServiceError(f"嵌入模型导入失败: {imported.stderr.strip()}")

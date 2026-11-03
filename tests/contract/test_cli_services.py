@@ -1,4 +1,9 @@
 import json
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from orchestrator import cli, services
 
@@ -35,3 +40,43 @@ def test_start_failure_has_no_success_json(tmp_path, monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "端口被外部进程占用" in captured.err
+
+
+def test_gptr_uses_workspace_and_root_python(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_API_BASE", "http://localhost:9379/v1")
+    monkeypatch.setenv("GPTR_MCP_URL", "http://localhost:8000/mcp")
+    specs = services._default_specs(tmp_path, tmp_path / "play.db")
+    gptr = next(spec for spec in specs if spec.name == "gptr-mcp")
+    assert gptr.command[0] == sys.executable
+    assert Path(gptr.command[1]) == services.ROOT / "packages" / "gptr-mcp" / "server.py"
+    assert ".venv" not in gptr.command[1]
+
+
+def test_missing_model_file_names_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("EMBEDDING_API_BASE", "http://localhost:9379/v1")
+    monkeypatch.setenv("LITERT_LM", "fake-litert")
+    monkeypatch.setenv("EMBEDDING_MODEL_FILE", str(tmp_path / "missing.litertlm"))
+    monkeypatch.setattr(services, "_http_ready", lambda url: False)
+    monkeypatch.setattr(services.subprocess, "run", lambda *args, **kwargs:
+                        SimpleNamespace(returncode=0, stdout="", stderr=""))
+    with pytest.raises(services.ServiceError, match="EMBEDDING_MODEL_FILE"):
+        services._prepare_embedding()
+
+
+def test_existing_model_is_imported_from_configured_file(tmp_path, monkeypatch):
+    model = tmp_path / "model.litertlm"
+    model.write_bytes(b"test")
+    calls = []
+    monkeypatch.setenv("EMBEDDING_API_BASE", "http://localhost:9379/v1")
+    monkeypatch.setenv("LITERT_LM", "fake-litert")
+    monkeypatch.setenv("EMBEDDING_MODEL_FILE", str(model))
+    monkeypatch.setenv("EMBEDDING_MODEL", "test-model")
+    monkeypatch.setattr(services, "_http_ready", lambda url: False)
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(services.subprocess, "run", fake_run)
+    services._prepare_embedding()
+    assert calls[1] == ["fake-litert", "import", str(model), "test-model"]

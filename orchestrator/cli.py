@@ -119,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
     dotenv.load_dotenv(ROOT / ".env")
     args = build_parser().parse_args(argv)
     home, db, library_db = _paths(args)
+    os.environ["NARRATIVE_HOME"] = str(home)
+    os.environ["NARRATIVE_DB"] = str(db)
+    os.environ["LIBRARY_DB"] = str(library_db)
     try:
         if args.command == "mcp":
             return _run_mcp(args, db)

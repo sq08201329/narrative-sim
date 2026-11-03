@@ -42,6 +42,26 @@ def test_research_uses_library_db_not_project_db(tmp_path, monkeypatch, capsys):
     assert project_db.exists() is False
 
 
+def test_cli_normalizes_all_data_paths_for_children(tmp_path, monkeypatch, capsys):
+    seen = {}
+
+    def fake_research(db_path, query, asset_type):
+        seen.update(home=os.environ.get("NARRATIVE_HOME"),
+                    narrative=os.environ.get("NARRATIVE_DB"),
+                    library=os.environ.get("LIBRARY_DB"))
+        return {"asset_id": "scene_1", "deduplicated": False}
+
+    import os
+    monkeypatch.setattr(workflows, "research", fake_research)
+    code = cli.main(["--home", str(tmp_path), "--db", str(tmp_path / "play.db"),
+                     "--library-db", str(tmp_path / "library.db"),
+                     "research", "q", "--type", "scene"])
+    assert code == 0
+    assert seen == {"home": str(tmp_path), "narrative": str(tmp_path / "play.db"),
+                    "library": str(tmp_path / "library.db")}
+    capsys.readouterr()
+
+
 def test_world_run_and_export_options(tmp_path, monkeypatch, capsys):
     calls = []
     monkeypatch.setattr(workflows, "create_world",
