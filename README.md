@@ -19,6 +19,31 @@ M1 全程离线、无需密钥（Mock 角色后端）。运行测试：
 uv run pytest -q    # 标注 real 的用例在无密钥时自动跳过
 ```
 
+## 统一 CLI
+
+```bash
+uv run narrative --help
+uv run narrative start                 # 嵌入 → 调研 → MCP；已健康的服务会复用
+uv run narrative status                # 全部就绪返回 0，否则返回 1
+uv run narrative stop                  # 只停止 CLI 受管进程，可重复执行
+```
+
+业务结果以 JSON 写 stdout，诊断写 stderr。典型工作流：
+
+```bash
+uv run narrative research "南宋临安酒楼" --type scene
+uv run narrative world create W001 --characters char_001 --location scene_001
+uv run narrative run W001 --run-id R001 --ticks 4 --backend mock
+uv run narrative export R001 --out exports/R001.jsonl
+uv run narrative mcp                   # 前台 MCP；stdio 模式加 --transport stdio
+```
+
+`--home` / `NARRATIVE_HOME` 默认项目根目录；`--db` / `NARRATIVE_DB` 默认
+`<home>/data/projects/linan.db`，只用于剧目世界与仿真。`research` 使用独立的
+`--library-db` / `LIBRARY_DB`，默认 `<home>/data/library.db`。命令参数优先于环境变量。
+日志在 `<home>/logs`，受管服务状态在 `<home>/run`。原 `scripts/start_stack.ps1`
+和各链路脚本继续保留。
+
 ## 真后端链路（M2，TinyTroupe）
 
 1. 在 `.env` 填入 `OPENAI_API_KEY` 与 `OPENAI_BASE_URL`（或 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL`，由后端桥接）

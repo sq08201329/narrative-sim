@@ -141,6 +141,13 @@ def test_run_simulation_world_not_found(mcp):
                                      "ticks": 1, "backend": "mock"})
 
 
+def test_export_run_not_found(mcp, tmp_path):
+    with pytest.raises(ToolError, match="RunNotFound"):
+        call(mcp, "export_events", {"run_id": "ghost",
+                                    "out_path": str(tmp_path / "ghost.jsonl")})
+    assert not (tmp_path / "ghost.jsonl").exists()
+
+
 def test_resume_without_snapshot(mcp):
     call(mcp, "create_world", {"world_id": "w1", "character_ids": ["char_a"],
                                "location_id": "scene_x"})
