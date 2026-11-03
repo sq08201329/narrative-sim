@@ -54,6 +54,61 @@ WorldSeed、GPT-Researcher、gptr-mcp 和检索插件都在仓库的 uv workspac
 `EMBEDDING_MODEL_FILE` 默认 `models/model.litertlm`；模型、数据库与 `.env` 不入库。
 改变 HOME 不会自动迁移旧库，已有数据需按 `data/README.md` 显式迁移。
 
+## 嵌入模型安装与启动（uv + hf-mirror）
+
+以下步骤在 PowerShell 执行。先安装当前已验证的 LiteRT-LM：
+
+```powershell
+uv tool install litert-lm==0.18.0
+litert-lm --version
+```
+
+若安装后找不到 `litert-lm`，将 `%USERPROFILE%\.local\bin` 加入用户 PATH 并重开终端。
+然后下载预量化的 text-270m 模型（约 157 MB）：
+
+```powershell
+$dir = "$env:LOCALAPPDATA\NarrativeSim\models"
+New-Item -ItemType Directory -Force $dir
+
+curl.exe -fSL `
+  "https://hf-mirror.com/litert-community/embeddinggemma-2-text-270m-litert-lm/resolve/main/embeddinggemma-2-text-270m.litertlm" `
+  -o "$dir\model.litertlm"
+```
+
+导入并检查模型：
+
+```powershell
+litert-lm import "$dir\model.litertlm" "eg2-text-270m.litertlm"
+litert-lm list
+```
+
+让项目识别该模型，可在当前终端设置：
+
+```powershell
+$env:EMBEDDING_MODEL_FILE = "$dir\model.litertlm"
+$env:EMBEDDING_MODEL = "eg2-text-270m.litertlm"
+$env:EMBEDDING_API_BASE = "http://localhost:9379/v1"
+```
+
+如需永久配置，把实际路径写入项目 `.env`；冻结版则写
+`%LOCALAPPDATA%\NarrativeSim\.env`。例如：
+
+```dotenv
+EMBEDDING_MODEL_FILE=C:/Users/你的用户名/AppData/Local/NarrativeSim/models/model.litertlm
+EMBEDDING_MODEL=eg2-text-270m.litertlm
+EMBEDDING_API_BASE=http://localhost:9379/v1
+```
+
+只启动嵌入 API 进行验证：
+
+```powershell
+litert-lm serve --host 127.0.0.1 --port 9379
+```
+
+保持该终端运行，另一个终端访问 `http://localhost:9379/v1/models`。
+正常使用时无需单独启动，可直接运行 `uv run narrative start`；冻结版使用
+`NarrativeSim.exe start`，统一启动器会复用已导入模型并在需要时自动导入。
+
 ## Windows 独立应用
 
 ```bash
