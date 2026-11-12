@@ -27,7 +27,7 @@ class MockPersonaBackend:
     _SCRIPT = [
         ("action", "{name}步入厅中，目光扫过在座的每一张脸。", "警觉"),
         ("inner_voice", "今夜这局棋，怕是冲着我来的。", "疑虑"),
-        ("dialogue", "诸位久候，在下林昭，初到贵地。", "克制"),
+        ("dialogue", "诸位久候，在下{name}，初到贵地。", "克制"),
         ("action", "{name}借着添茶的功夫，将纸条压入了壶底。", "镇定"),
     ]
 

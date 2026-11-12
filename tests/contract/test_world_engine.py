@@ -91,6 +91,14 @@ def test_build_config_empty_characters(store):
 
 # ---------- T004：世界循环与契约 + 信息不对称 ----------
 
+def test_mock_dialogue_uses_character_name():
+    backend = MockPersonaBackend()
+    action = backend.act({"name": "孙悟空"}, {"tick": 3})[0]
+    assert action["kind"] == "dialogue"
+    assert "孙悟空" in action["content"]
+    assert "林昭" not in action["content"]
+
+
 def test_world_loop_events_contract(store):
     events = run_world(store, "r1", "w1", ["char_a", "char_b"], "scene_hall",
                        ticks=3, backend=MockPersonaBackend())
