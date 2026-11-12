@@ -12,6 +12,7 @@ datas = [
     (str(ROOT / "packages/worldseed/configs"), "configs"),
 ]
 datas += collect_data_files("rfc3987_syntax")
+datas += collect_data_files("litellm")  # model_prices 等运行时 JSON
 datas += copy_metadata("gpt-researcher")
 datas += copy_metadata("gptr-deepseek-retriever")
 datas += copy_metadata("tiktoken")

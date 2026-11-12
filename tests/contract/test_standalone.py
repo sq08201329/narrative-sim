@@ -24,6 +24,7 @@ def test_packaging_spec_collects_frozen_runtime_dependencies():
     assert '"selenium"' in spec
     assert '"tiktoken_ext.openai_public"' in spec
     assert 'copy_metadata("tiktoken")' in spec
+    assert 'collect_data_files("litellm")' in spec
 
 
 def test_user_config_is_copied_only_once(tmp_path, monkeypatch):
