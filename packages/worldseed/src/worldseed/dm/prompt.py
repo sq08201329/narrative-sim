@@ -10,6 +10,7 @@ See docs/architecture/dm/dm-context-format.md for the full spec.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 from worldseed.protocol.dm import DMContext
@@ -143,9 +144,25 @@ Never translate, transliterate, or romanize them.
 {language_instruction}"""
 
 
-_LANG_NAMES: dict[str, str] = json.loads(
-    (Path(__file__).resolve().parents[3] / "shared" / "languages.json").read_text(encoding="utf-8")
-)
+def _load_lang_names() -> dict[str, str]:
+    """按运行形态定位 languages.json。
+
+    冻结版（PyInstaller）数据在 ``_MEIPASS/shared``；源码树在包根
+    ``shared``（本文件 parents[3]）。报错时列出全部尝试路径。"""
+    candidates = []
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / "shared" / "languages.json")
+    candidates.append(Path(__file__).resolve().parents[3] / "shared" / "languages.json")
+    for path in candidates:
+        if path.is_file():
+            return json.loads(path.read_text(encoding="utf-8"))
+    raise FileNotFoundError(
+        "languages.json 未找到，已尝试: " + ", ".join(str(c) for c in candidates)
+    )
+
+
+_LANG_NAMES: dict[str, str] = _load_lang_names()
 
 
 def _language_display(code: str) -> str:

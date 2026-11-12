@@ -53,3 +53,33 @@ def test_frozen_services_callback_same_executable(tmp_path, monkeypatch):
     assert "uv" not in narrative.command
     assert "mcp" in narrative.command
     assert "-m" not in narrative.command
+
+
+def test_dm_prompt_loads_languages_in_source_tree():
+    """源码树形态：languages.json 按包根 shared 解析（回归锚点）。"""
+    from worldseed.dm import prompt as dm_prompt
+    names = dm_prompt._load_lang_names()
+    assert isinstance(names, dict) and names
+
+
+def test_dm_prompt_loads_languages_frozen(tmp_path, monkeypatch):
+    """冻结形态：languages.json 从 _MEIPASS/shared 解析，不再指到 bundle 根。"""
+    from worldseed.dm import prompt as dm_prompt
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "languages.json").write_text('{"zh": "中文"}', encoding="utf-8")
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    assert dm_prompt._load_lang_names() == {"zh": "中文"}
+
+
+def test_dm_prompt_languages_error_lists_candidates(tmp_path, monkeypatch):
+    """全部候选路径缺失时，报错信息列出尝试过的路径。"""
+    import worldseed.dm.prompt as dm_prompt
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path / "nope"), raising=False)
+    monkeypatch.setattr(dm_prompt, "__file__", str(tmp_path / "a/b/c/d/prompt.py"))
+    try:
+        dm_prompt._load_lang_names()
+    except FileNotFoundError as e:
+        assert "nope" in str(e) and "尝试" in str(e)
+    else:
+        raise AssertionError("应抛 FileNotFoundError")

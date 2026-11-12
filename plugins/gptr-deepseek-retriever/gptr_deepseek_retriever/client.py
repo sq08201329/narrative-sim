@@ -5,6 +5,8 @@
 - 429/408/5xx 退避 2s/4s 重试，上限 DEEPSEEK_SEARCH_RETRIES（默认 2）
 - 401/402 打印原因不重试；query 截断到官方上限 128 字符；超时 30s
 """
+import gzip
+import json
 import os
 import sys
 import time
@@ -37,6 +39,50 @@ def _retries() -> int:
     return int(os.environ.get("DEEPSEEK_SEARCH_RETRIES", "2"))
 
 
+def _zstd_decompress(raw: bytes) -> bytes | None:
+    """zstd 解压；运行环境无 zstd 支持或数据损坏时返回 None。"""
+    try:
+        if sys.version_info >= (3, 14):
+            from compression.zstd import decompress
+        else:
+            from backports.zstd import decompress
+    except ImportError:
+        _warn("zstd 支持不可用（缺 backports-zstd），无法解压 zstd 响应")
+        return None
+    try:
+        return decompress(raw)
+    except Exception as exc:
+        _warn(f"zstd 解压失败: {exc}")
+        return None
+
+
+def _decode_lenient(raw: bytes) -> dict | None:
+    """对 Content-Encoding 误标的响应做容错解码。
+
+    上游（DeepSeek API 或其 CDN）出现过头标 zstd、正文实为明文 JSON 的
+    情况；按魔数而非响应头判断压缩格式：gzip/zstd 解压，否则按明文。
+    失败返回 None（不抛）。"""
+    if raw.startswith(b"\x1f\x8b"):
+        try:
+            raw = gzip.decompress(raw)
+        except OSError as exc:
+            _warn(f"gzip 解压失败: {exc}")
+            return None
+    elif raw.startswith(b"\x28\xb5\x2f\xfd"):
+        raw = _zstd_decompress(raw)
+        if raw is None:
+            return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        _warn("响应非 JSON")
+        return None
+    if not isinstance(data, dict):
+        _warn(f"响应类型异常: {type(data).__name__}")
+        return None
+    return data
+
+
 def _post(path: str, payload: dict):
     """带退避重试的 POST。成功返回 parsed JSON dict；失败返回 None（不抛）。"""
     key = _api_key()
@@ -47,32 +93,29 @@ def _post(path: str, payload: dict):
     attempts = 1 + _retries()
     for i in range(attempts):
         try:
-            resp = httpx.post(url, json=payload, headers=headers,
-                              timeout=REQUEST_TIMEOUT)
+            # iter_raw 取未解码字节，自做容错解码：绕开 httpx 解码器在
+            # 误标 Content-Encoding 时的 zlib/zstd 失败（Bug：Error -3）。
+            with httpx.stream("POST", url, json=payload, headers=headers,
+                              timeout=REQUEST_TIMEOUT) as resp:
+                status = resp.status_code
+                raw = b"".join(resp.iter_raw())
+                text = "" if status == 200 else raw.decode("utf-8", errors="replace")
         except httpx.HTTPError as exc:
             _warn(f"请求异常: {exc}")
             if i < attempts - 1:
                 time.sleep(BACKOFF_S[min(i, len(BACKOFF_S) - 1)])
             continue
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                _warn("响应非 JSON")
-                return None
-            if not isinstance(data, dict):
-                _warn(f"响应类型异常: {type(data).__name__}")
-                return None
-            return data
-        if resp.status_code in (401, 402):
-            _warn(f"鉴权/余额问题（HTTP {resp.status_code}），不重试")
+        if status == 200:
+            return _decode_lenient(raw)
+        if status in (401, 402):
+            _warn(f"鉴权/余额问题（HTTP {status}），不重试")
             return None
-        if resp.status_code in (408, 429) or resp.status_code >= 500:
-            _warn(f"HTTP {resp.status_code}，退避重试 {i + 1}/{attempts - 1}")
+        if status in (408, 429) or status >= 500:
+            _warn(f"HTTP {status}，退避重试 {i + 1}/{attempts - 1}")
             if i < attempts - 1:
                 time.sleep(BACKOFF_S[min(i, len(BACKOFF_S) - 1)])
             continue
-        _warn(f"HTTP {resp.status_code}（不可重试）: {resp.text[:200]}")
+        _warn(f"HTTP {status}（不可重试）: {text[:200]}")
         return None
     return None
 

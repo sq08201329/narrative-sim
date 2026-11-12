@@ -1,8 +1,11 @@
 """005 离线测试：DeepSeek Search/Fetch 工具函数 + GPTR retriever 插件。
 
-全程离线：mock httpx.post 与 time.sleep，不依赖任何真实 API。
+全程离线：mock httpx.stream 与 time.sleep，不依赖任何真实 API。
 契约来源：specs/005-deepseek-web-research/data-model.md。
 """
+import gzip
+import json
+
 import pytest
 
 from gptr_deepseek_retriever import (
@@ -23,13 +26,28 @@ def _env(monkeypatch):
 
 
 class Resp:
-    def __init__(self, status=200, payload=None, text=""):
+    def __init__(self, status=200, payload=None, text="", raw=None):
         self.status_code = status
-        self._payload = payload
-        self.text = text
+        if raw is not None:
+            self._raw = raw
+        elif payload is not None:
+            self._raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        else:
+            self._raw = text.encode("utf-8")
 
-    def json(self):
-        return self._payload
+    def iter_raw(self):
+        yield self._raw
+
+
+class _StreamCtx:
+    def __init__(self, resp):
+        self._resp = resp
+
+    def __enter__(self):
+        return self._resp
+
+    def __exit__(self, *args):
+        return False
 
 
 def mock_post(monkeypatch, sequence):
@@ -37,14 +55,14 @@ def mock_post(monkeypatch, sequence):
     calls = []
     it = iter(sequence)
 
-    def fake_post(url, json=None, headers=None, timeout=None, **kw):
+    def fake_stream(method, url, json=None, headers=None, timeout=None, **kw):
         calls.append({"url": url, "json": json, "headers": headers})
         item = next(it)
         if isinstance(item, Exception):
             raise item
-        return item
+        return _StreamCtx(item)
 
-    monkeypatch.setattr(client_mod.httpx, "post", fake_post)
+    monkeypatch.setattr(client_mod.httpx, "stream", fake_stream)
     return calls
 
 
@@ -217,3 +235,45 @@ def test_retriever_no_mutable_state(monkeypatch):
     before = dict(r.__dict__)
     r.search(max_results=5)
     assert r.__dict__ == before  # 并发安全：search 不改实例状态
+
+
+# ---------- 容错解码（Content-Encoding 误标） ----------
+
+def test_decode_lenient_plain_json():
+    """头标 zstd/gzip 但正文是明文 JSON（真机出现过）：按明文解析。"""
+    raw = json.dumps({"results": [1]}, ensure_ascii=False).encode("utf-8")
+    assert client_mod._decode_lenient(raw) == {"results": [1]}
+
+
+def test_decode_lenient_gzip():
+    raw = gzip.compress(json.dumps({"ok": True}).encode("utf-8"))
+    assert client_mod._decode_lenient(raw) == {"ok": True}
+
+
+def test_decode_lenient_zstd():
+    pytest.importorskip("backports.zstd")
+    from backports.zstd import compress
+    raw = compress(json.dumps({"ok": "zstd"}).encode("utf-8"))
+    assert client_mod._decode_lenient(raw) == {"ok": "zstd"}
+
+
+def test_decode_lenient_bad_zstd_returns_none():
+    """zstd 魔数开头但数据损坏：返回 None 而不抛 zlib/zstd 异常。"""
+    assert client_mod._decode_lenient(b"\x28\xb5\x2f\xfd" + "损坏的数据".encode("utf-8")) is None
+
+
+def test_decode_lenient_non_json_returns_none():
+    assert client_mod._decode_lenient(b"<html>502</html>") is None
+
+
+def test_search_with_mislabeled_zstd_body(monkeypatch):
+    """端到端：响应为明文 JSON 字节（曾被误标 zstd），检索照常成功。"""
+    raw = json.dumps(RESULTS, ensure_ascii=False).encode("utf-8")
+    mock_post(monkeypatch, [Resp(200, raw=raw)])
+    assert len(web_search("q")) == 4
+
+
+def test_search_with_gzip_body(monkeypatch):
+    raw = gzip.compress(json.dumps(RESULTS, ensure_ascii=False).encode("utf-8"))
+    mock_post(monkeypatch, [Resp(200, raw=raw)])
+    assert len(web_search("q")) == 4
