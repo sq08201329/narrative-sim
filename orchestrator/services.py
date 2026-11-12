@@ -93,6 +93,15 @@ class StackManager:
                 if (connection.laddr and connection.laddr.port == spec.port
                         and connection.status == psutil.CONN_LISTEN):
                     return connection.pid
+        except psutil.AccessDenied:
+            for process in psutil.process_iter():
+                try:
+                    for connection in process.net_connections(kind="tcp"):
+                        if (connection.laddr and connection.laddr.port == spec.port
+                                and connection.status == psutil.CONN_LISTEN):
+                            return process.pid
+                except (psutil.Error, OSError):
+                    continue
         except (psutil.Error, OSError):
             pass
         return None
