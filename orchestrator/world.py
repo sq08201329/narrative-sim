@@ -6,7 +6,8 @@ WorldSeed 的全部接触面集中在本模块（research.md R1/R6）：
 - run_world：引擎驱动的世界循环（perceive → backend.act → submit → step），
   visible_state 由引擎感知派生（FR-003 单一真相源），契约事件 emit 复用 001 口径
 - 快照：每 tick engine.save_state() → _CaptureRecorder → store.put_world_state；
-  resume 时同配置重建引擎 + load_state，事件编号经 store.max_event_no() 连续
+  resume 时同配置重建引擎 + load_state，事件编号经 store.max_event_no() 连续，
+  并把本世界历史事件注入各角色情景记忆（续跑连续性；他人心声不注入）
 - DM 审计（010）：_CaptureRecorder 捕获引擎 dm_call 记录，run 结束落 dm_calls 表
 """
 import asyncio
@@ -260,6 +261,56 @@ def _visible_state(perception, tick: int, character_id: str,
     }
 
 
+_RESUME_MEMORY_MAX_CHARS = 4000
+_RESUME_PUBLIC_TYPES = ("scene_change", "dialogue", "action")
+
+
+def _resume_history_text(events: list[dict], cid: str,
+                         names: dict[str, str]) -> str:
+    """世界历史 → 某角色的续跑记忆文本。
+
+    公开事件（scene_change/dialogue/action）全员可见；inner_voice 只保留
+    本人（characters == [cid]），他人的心声不进记忆（私语零泄漏）。
+    超长时保留最近段。"""
+    lines = []
+    for ev in events:
+        etype = ev.get("type")
+        chars = ev.get("characters") or []
+        content = str(ev.get("content", "")).strip()
+        if not content:
+            continue
+        if etype == "inner_voice":
+            if chars == [cid]:
+                lines.append(f"第{ev.get('tick')}回合 （你的心声）{content}")
+        elif etype in _RESUME_PUBLIC_TYPES:
+            speaker = "、".join(names.get(c, c) for c in chars) or "旁白"
+            verb = {"dialogue": "说：", "action": "行动："}.get(etype, "")
+            lines.append(f"第{ev.get('tick')}回合 {speaker}{verb}{content}")
+    text = "\n".join(lines)
+    if len(text) > _RESUME_MEMORY_MAX_CHARS:
+        text = "……（前略）\n" + text[-_RESUME_MEMORY_MAX_CHARS:]
+    return text
+
+
+def _seed_resume_history(store: Store, backend: PersonaBackend,
+                         world_id: str, run_id: str,
+                         personas: list[tuple[str, dict]]) -> None:
+    """resume 时把本世界历史事件注入各角色情景记忆（续跑连续性修复）。
+
+    后端不支持 seed_memory 时跳过；无历史事件时跳过。"""
+    seed = getattr(backend, "seed_memory", None)
+    if not callable(seed):
+        return
+    events = store.events_for_world(world_id)
+    if not events:
+        return
+    names = {cid: str(spec.get("name") or cid) for cid, spec in personas}
+    for cid, _spec in personas:
+        text = _resume_history_text(events, cid, names)
+        if text:
+            seed(cid, f"本幕此前的经历（按时间顺序）：\n{text}")
+
+
 def _map_to_engine_action(action: dict) -> tuple[str, dict] | None:
     """backend 动作 → 引擎动作；inner_voice 只出契约事件、不进引擎。"""
     kind = action.get("kind")
@@ -290,6 +341,8 @@ def run_world(store: Store, run_id: str, world_id: str,
               memory_from: str | None = None) -> list[dict]:
     """引擎驱动的世界循环；resume=True 时从 worlds.state 最近快照续跑。
 
+    resume 续跑会把本世界历史事件经 backend.seed_memory 注入各角色
+    （重建的 TinyTroupe 角色不带上段记忆，见 _seed_resume_history）。
     dm 非 None 时启用真实裁决（dm_provider 为 None 则经 build_dm_provider
     构造；测试可注入 MockDMProvider）；run 结束后 dm_call 审计落库。
     pins 非 None 时按修订版号取卡（011 世界冻结锚点）。
@@ -305,7 +358,7 @@ def run_world(store: Store, run_id: str, world_id: str,
                 memories[cid] = m["summary"]
                 seed = getattr(backend, "seed_memory", None)
                 if callable(seed):
-                    seed(cid, m["summary"])
+                    seed(cid, f"上一幕的经历：\n{m['summary']}")
     if dm is not None and dm_provider is None:
         dm_provider = build_dm_provider(dm)
     config = build_scene_config(store, character_ids, location_id, dm=dm,
@@ -336,6 +389,8 @@ def run_world(store: Store, run_id: str, world_id: str,
         asset = _pinned_get(store, cid, pins)
         personas.append((cid, dict(asset.get("persona_spec", {}),
                                    name=asset["name"])))
+    if resume:
+        _seed_resume_history(store, backend, world_id, run_id, personas)
 
     events: list[dict] = []
     seq_no = store.max_event_no()

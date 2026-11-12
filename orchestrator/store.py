@@ -564,6 +564,18 @@ class Store:
             _validate(ev, "event.schema.json")
         return events
 
+    def events_for_world(self, world_id: str) -> list[dict]:
+        """某世界全部 run 的事件（按写入顺序），供 resume 注入角色记忆。
+
+        不做契约复验：续跑记忆注入是尽力而为的旁路，历史事件异常不应
+        阻断仿真；需要严格口径的导出走 export_events。"""
+        rows = self._conn.execute(
+            "SELECT e.payload FROM events e JOIN runs r ON e.run_id = r.run_id"
+            " WHERE r.world_id=? ORDER BY e.rowid",
+            (world_id,),
+        ).fetchall()
+        return [json.loads(r["payload"]) for r in rows]
+
     # ---- 裁决审计（010）----
 
     def put_dm_call(self, run_id: str, tick: int, action: str, agent_id: str,

@@ -82,6 +82,7 @@ class TinyTroupeBackend(PersonaBackend):
         self._injected = person_cls is not None
         self._person_cls = person_cls
         self._persons: dict[str, object] = {}
+        self._pending_seeds: dict[str, list[str]] = {}
         self._max_retries = max_retries
         if not self._injected:
             self._clear_agent_registry()
@@ -168,6 +169,11 @@ class TinyTroupeBackend(PersonaBackend):
             display_name = persona_spec.get("name")
             if display_name:
                 person.define("name", display_name)
+            for text in self._pending_seeds.pop(asset_id, []):
+                person.episodic_memory.store({
+                    "type": "observation",
+                    "content": text,
+                })
             self._persons[asset_id] = person
         return person
 
@@ -199,13 +205,10 @@ class TinyTroupeBackend(PersonaBackend):
         return contextlib.nullcontext()
 
     def seed_memory(self, asset_id: str, text: str) -> None:
-        """注入上一幕记忆（012）：写入情景记忆，参与后续 act 的记忆检索。"""
-        with self._frozen_resource_context():
-            person = self._get_person(asset_id, {"name": asset_id})
-            person.episodic_memory.store({
-                "type": "observation",
-                "content": f"上一幕的经历：\n{text}",
-            })
+        """记录待注入记忆（012/续跑修复）：挂起到对应角色名下，首个
+        TinyPerson 创建（带完整 persona 定义）后写入情景记忆，参与后续
+        act 的记忆检索。直接创建实例会抢占缓存、导致 persona 定义被跳过。"""
+        self._pending_seeds.setdefault(asset_id, []).append(text)
 
     def collect_total_tokens(self) -> int:
         from tinytroupe.clients import client

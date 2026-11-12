@@ -15,6 +15,16 @@ from orchestrator.persona_tinytroupe import (
 )
 
 
+class FakeEpisodicMemory:
+    """最小情景记忆：记录 store 的内容。"""
+
+    def __init__(self):
+        self.stored: list[dict] = []
+
+    def store(self, item):
+        self.stored.append(item)
+
+
 class FakeTinyPerson:
     """模拟 TinyPerson 的最小接口：build 计数 + 剧本化 act 返回。"""
 
@@ -28,6 +38,7 @@ class FakeTinyPerson:
         type(self).seen_cwds.append(os.getcwd())
         self.name = name
         self.persona = None
+        self.episodic_memory = FakeEpisodicMemory()
 
     def include_persona_definitions(self, definitions):
         self.persona = definitions
@@ -185,3 +196,29 @@ def test_deepseek_token_count_degrades_quietly(monkeypatch, caplog):
         assert client._count_tokens(
             [{"role": "user", "content": "你好"}], "deepseek-flash") is None
     assert "Error counting tokens" not in caplog.text
+
+
+def test_seed_memory_deferred_until_person_created(backend):
+    """seed_memory 挂起注入：不提前建实例，persona 定义完整后再写记忆。
+
+    回归锚点：旧实现用最小 spec 抢先建实例并缓存，导致 act 时
+    include_persona_definitions 被跳过、角色退化为空壳。"""
+    backend.seed_memory("char_su_wanqing", "上一幕的经历：\n她救了人。")
+    assert FakeTinyPerson.build_count == 0  # seed 不建实例
+
+    FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "嗯。", "target": None}]
+    backend.act(PERSONA, STATE)
+    person = backend._persons["char_su_wanqing"]
+    assert person.persona["age"] == 24  # persona 定义未被空壳抢占
+    assert person.persona["occupation"] == "游方医者"
+    assert person.episodic_memory.stored == [
+        {"type": "observation", "content": "上一幕的经历：\n她救了人。"}]
+
+
+def test_seed_memory_multiple_texts_keep_order(backend):
+    backend.seed_memory("char_su_wanqing", "第一段")
+    backend.seed_memory("char_su_wanqing", "第二段")
+    FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "嗯。", "target": None}]
+    backend.act(PERSONA, STATE)
+    stored = backend._persons["char_su_wanqing"].episodic_memory.stored
+    assert [s["content"] for s in stored] == ["第一段", "第二段"]

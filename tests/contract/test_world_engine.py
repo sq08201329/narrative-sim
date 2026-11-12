@@ -218,6 +218,56 @@ def test_rerun_existing_run_id_without_resume_raises(store):
     assert store.export_events("r1") == before
 
 
+def test_resume_seeds_world_history(store):
+    """续跑连续性修复：resume 时把本世界历史注入各角色情景记忆。
+
+    公开事件全员可见；inner_voice 只保留本人（他人心声零泄漏）；
+    角色名用资产 display name；非 resume 的正常 run 不注入。"""
+    b1 = MockPersonaBackend()
+    run_world(store, "r1", "w1", ["char_a", "char_b"], "scene_hall",
+              ticks=2, backend=b1)
+    assert b1.seeded == []  # 非 resume 不注入
+
+    b2 = MockPersonaBackend()
+    run_world(store, "r2", "w1", ["char_a", "char_b"], "scene_hall",
+              ticks=1, backend=b2, resume=True)
+    seeded = dict(b2.seeded)
+    assert set(seeded) == {"char_a", "char_b"}
+    for cid in ("char_a", "char_b"):
+        text = seeded[cid]
+        assert text.startswith("本幕此前的经历")
+        # 公开事件（tick 1 action）双方可见，且用 display name
+        assert "甲行动：甲步入厅中" in text
+        assert "乙行动：乙步入厅中" in text
+        # 自己的心声保留且仅一条（他人的不进记忆）
+        assert text.count("（你的心声）今夜这局棋") == 1
+
+
+def test_resume_seed_truncates_long_history(store):
+    """历史超长时保留最近段，总长受 _RESUME_MEMORY_MAX_CHARS 约束。"""
+    from orchestrator.world import _RESUME_MEMORY_MAX_CHARS, _resume_history_text
+    events = [{"type": "dialogue", "tick": i, "characters": ["char_a"],
+               "content": "长" * 200} for i in range(1, 60)]
+    text = _resume_history_text(events, "char_a", {"char_a": "甲"})
+    assert text.startswith("……（前略）")
+    assert len(text) <= _RESUME_MEMORY_MAX_CHARS + len("……（前略）\n")
+    assert "第59回合" in text  # 保留最近
+
+
+def test_resume_seed_skips_backend_without_seed_memory(store):
+    """后端无 seed_memory 方法时 resume 照常运行（跳过注入）。"""
+    class BareBackend:
+        def act(self, persona_spec, visible_state):
+            return [{"kind": "dialogue", "content": "嗯", "emotion": ""}]
+
+    run_world(store, "r1", "w1", ["char_a"], "scene_hall",
+              ticks=1, backend=BareBackend())
+    events = run_world(store, "r2", "w1", ["char_a"], "scene_hall",
+                       ticks=1, backend=BareBackend(), resume=True)
+    assert {e["tick"] for e in events} == {2}
+
+
+
 # ---------- T009：翻译口径与边界 ----------
 
 def test_worldseed_import_boundary():
