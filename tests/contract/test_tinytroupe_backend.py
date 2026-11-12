@@ -3,6 +3,8 @@
 全程离线：用 FakeTinyPerson 替换真实 TinyPerson（plan D9）。
 先写测试，确认 FAIL 后实现 orchestrator/persona_tinytroupe.py。
 """
+import os
+
 import pytest
 
 from orchestrator.persona_tinytroupe import (
@@ -18,9 +20,11 @@ class FakeTinyPerson:
     build_count = 0
     scripted_actions: list[dict] = []
     fail_times = 0
+    seen_cwds: list[str] = []
 
     def __init__(self, name):
         type(self).build_count += 1
+        type(self).seen_cwds.append(os.getcwd())
         self.name = name
         self.persona = None
 
@@ -31,9 +35,11 @@ class FakeTinyPerson:
         self.persona[key] = value
 
     def listen(self, text, **kwargs):
+        type(self).seen_cwds.append(os.getcwd())
         self.last_heard = text
 
     def act(self, return_actions=False, **kwargs):
+        type(self).seen_cwds.append(os.getcwd())
         if type(self).fail_times > 0:
             type(self).fail_times -= 1
             raise TypeError("LLM 响应为空")
@@ -48,6 +54,7 @@ def backend(monkeypatch):
     FakeTinyPerson.build_count = 0
     FakeTinyPerson.scripted_actions = []
     FakeTinyPerson.fail_times = 0
+    FakeTinyPerson.seen_cwds = []
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://example.invalid")
     b = TinyTroupeBackend(person_cls=FakeTinyPerson)
@@ -142,3 +149,15 @@ def test_full_action_sequence_collected_in_order(backend):
     out = backend.act(PERSONA, STATE)
     assert [a["kind"] for a in out] == ["inner_voice", "dialogue"]
     assert [a["content"] for a in out] == ["先想清楚。", "再开口说。"]
+
+
+def test_frozen_act_uses_resource_root_and_restores_cwd(tmp_path, monkeypatch, backend):
+    frozen_root = tmp_path / "resources"
+    frozen_root.mkdir()
+    monkeypatch.setattr("orchestrator.persona_tinytroupe.is_frozen", lambda: True)
+    monkeypatch.setattr("orchestrator.persona_tinytroupe.resource_root", lambda: frozen_root)
+    FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "嗯。", "target": None}]
+    original_cwd = os.getcwd()
+    assert backend.act(PERSONA, STATE)[0]["content"] == "嗯。"
+    assert os.getcwd() == original_cwd
+    assert set(FakeTinyPerson.seen_cwds) == {str(frozen_root)}

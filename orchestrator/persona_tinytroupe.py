@@ -10,6 +10,7 @@
   Settings.embed_model（import 时默认实例会跟随 OPENAI_BASE_URL 指向 LLM 服务，
   必须在首个 TinyPerson 创建前覆盖）；否则降级为本地列表（只存不检）
 """
+import contextlib
 import logging
 import os
 
@@ -17,6 +18,7 @@ from dotenv import load_dotenv
 
 from .embedding import build_embedding_model, embedding_config, preflight_embedding
 from .persona import PersonaBackend
+from .runtime import is_frozen, resource_root
 
 logger = logging.getLogger(__name__)
 
@@ -184,13 +186,20 @@ class TinyTroupeBackend(PersonaBackend):
         from tinytroupe.clients import client
         client().reset_cost_stats()
 
+    @staticmethod
+    def _frozen_resource_context():
+        if is_frozen():
+            return contextlib.chdir(resource_root())
+        return contextlib.nullcontext()
+
     def seed_memory(self, asset_id: str, text: str) -> None:
         """注入上一幕记忆（012）：写入情景记忆，参与后续 act 的记忆检索。"""
-        person = self._get_person(asset_id, {"name": asset_id})
-        person.episodic_memory.store({
-            "type": "observation",
-            "content": f"上一幕的经历：\n{text}",
-        })
+        with self._frozen_resource_context():
+            person = self._get_person(asset_id, {"name": asset_id})
+            person.episodic_memory.store({
+                "type": "observation",
+                "content": f"上一幕的经历：\n{text}",
+            })
 
     def collect_total_tokens(self) -> int:
         from tinytroupe.clients import client
@@ -202,29 +211,30 @@ class TinyTroupeBackend(PersonaBackend):
         TinyTroupe 协议强制 THINK 在 TALK 之前；002 版只取第一个动作，
         导致 TALK 被系统性丢弃（"角色从不开口"缺陷的根因）。"""
         asset_id = visible_state.get("character_id") or persona_spec.get("name", "char_unknown")
-        person = self._get_person(asset_id, persona_spec)
-        person.listen(self._summarize_state(visible_state))
+        with self._frozen_resource_context():
+            person = self._get_person(asset_id, persona_spec)
+            person.listen(self._summarize_state(visible_state))
 
-        last_error: Exception | None = None
-        for _ in range(self._max_retries):
-            try:
-                results = person.act(return_actions=True) or []
-                actions = []
-                for item in results:
-                    kind = self._map_action(item.get("action", {}))
-                    if kind is None:
-                        continue
-                    emotions = item.get("cognitive_state", {}).get("emotions", "")
-                    actions.append({
-                        "kind": kind,
-                        "content": item["action"].get("content", ""),
-                        "emotion": str(emotions),
-                    })
-                if actions:
-                    return actions
-                last_error = BackendActionError("本回合动作全部为 DONE")
-            except Exception as e:  # LLM 结构漂移 / API 失败穿透
-                last_error = e
+            last_error: Exception | None = None
+            for _ in range(self._max_retries):
+                try:
+                    results = person.act(return_actions=True) or []
+                    actions = []
+                    for item in results:
+                        kind = self._map_action(item.get("action", {}))
+                        if kind is None:
+                            continue
+                        emotions = item.get("cognitive_state", {}).get("emotions", "")
+                        actions.append({
+                            "kind": kind,
+                            "content": item["action"].get("content", ""),
+                            "emotion": str(emotions),
+                        })
+                    if actions:
+                        return actions
+                    last_error = BackendActionError("本回合动作全部为 DONE")
+                except Exception as e:  # LLM 结构漂移 / API 失败穿透
+                    last_error = e
         raise BackendActionError(
             f"角色 {asset_id} 动作解析重试 {self._max_retries} 次后仍失败: {last_error}"
         ) from last_error

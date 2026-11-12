@@ -14,8 +14,9 @@ datas = [
 datas += collect_data_files("rfc3987_syntax")
 datas += copy_metadata("gpt-researcher")
 datas += copy_metadata("gptr-deepseek-retriever")
-hiddenimports = ["server", "utils"]
-for package in ("gpt_researcher", "worldseed", "tinytroupe"):
+datas += copy_metadata("tiktoken")
+hiddenimports = ["server", "utils", "tiktoken_ext.openai_public"]
+for package in ("gpt_researcher", "worldseed", "tinytroupe", "selenium"):
     package_datas, _, package_hidden = collect_all(package)
     datas += package_datas
     hiddenimports += package_hidden

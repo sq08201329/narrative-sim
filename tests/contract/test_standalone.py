@@ -18,6 +18,14 @@ def test_development_home_remains_repository_root(monkeypatch):
     assert runtime.default_home() == runtime.resource_root()
 
 
+def test_packaging_spec_collects_frozen_runtime_dependencies():
+    spec = (Path(__file__).resolve().parent.parent.parent /
+            "packaging" / "narrative.spec").read_text(encoding="utf-8")
+    assert '"selenium"' in spec
+    assert '"tiktoken_ext.openai_public"' in spec
+    assert 'copy_metadata("tiktoken")' in spec
+
+
 def test_user_config_is_copied_only_once(tmp_path, monkeypatch):
     source = tmp_path / "config.ini"
     source.write_text("default", encoding="utf-8")

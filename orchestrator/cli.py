@@ -141,13 +141,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         home, db, library_db = _paths(args)
+        dotenv.load_dotenv(home / ".env")
+        home, db, library_db = _paths(args)
         if args.command != "init":
             _prepare_user_home(home)
-        if is_frozen():
-            dotenv.load_dotenv(home / ".env")
-            home, db, library_db = _paths(args)
-            if args.command != "init":
-                _prepare_user_home(home)
         os.environ["NARRATIVE_HOME"] = str(home)
         os.environ["NARRATIVE_DB"] = str(db)
         os.environ["LIBRARY_DB"] = str(library_db)

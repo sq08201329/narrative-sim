@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -59,6 +61,31 @@ def test_cli_normalizes_all_data_paths_for_children(tmp_path, monkeypatch, capsy
     assert code == 0
     assert seen == {"home": str(tmp_path), "narrative": str(tmp_path / "play.db"),
                     "library": str(tmp_path / "library.db")}
+    capsys.readouterr()
+
+
+def test_explicit_home_env_is_loaded_before_workflow(tmp_path, monkeypatch, capsys):
+    loaded_paths = []
+    seen_keys = []
+
+    def fake_load_dotenv(path=None):
+        path = Path(path)
+        loaded_paths.append(path)
+        if path == tmp_path / ".env":
+            os.environ["OPENAI_API_KEY"] = "sk-home"
+        return True
+
+    def fake_research(db_path, query, asset_type):
+        seen_keys.append(os.environ.get("OPENAI_API_KEY"))
+        return {"asset_id": "scene_1", "deduplicated": False}
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr(cli.dotenv, "load_dotenv", fake_load_dotenv)
+    monkeypatch.setattr(workflows, "research", fake_research)
+    code = cli.main(["--home", str(tmp_path), "research", "q", "--type", "scene"])
+    assert code == 0
+    assert tmp_path / ".env" in loaded_paths
+    assert seen_keys == ["sk-home"]
     capsys.readouterr()
 
 
