@@ -3,6 +3,7 @@
 全程离线：用 FakeTinyPerson 替换真实 TinyPerson（plan D9）。
 先写测试，确认 FAIL 后实现 orchestrator/persona_tinytroupe.py。
 """
+import logging
 import os
 
 import pytest
@@ -169,3 +170,18 @@ def test_scene_context_replaces_hardcoded_setting(backend):
     heard = backend._persons["char_su_wanqing"].last_heard
     assert "花果山水帘洞" in heard
     assert "南宋临安街市" not in heard
+
+
+def test_deepseek_token_count_degrades_quietly(monkeypatch, caplog):
+    registered = {}
+    monkeypatch.setattr(
+        "tinytroupe.clients.register_client",
+        lambda name, client: registered.update({name: client}),
+    )
+    from orchestrator.persona_tinytroupe import _register_json_mode_client
+    _register_json_mode_client()
+    client = registered["openai"]
+    with caplog.at_level(logging.ERROR, logger="tinytroupe"):
+        assert client._count_tokens(
+            [{"role": "user", "content": "你好"}], "deepseek-flash") is None
+    assert "Error counting tokens" not in caplog.text

@@ -49,6 +49,11 @@ def _register_json_mode_client() -> None:
     from tinytroupe.clients.openai_client import OpenAIClient
 
     class JsonModeClient(OpenAIClient):
+        def _count_tokens(self, messages, model):
+            if isinstance(model, str) and model.startswith("deepseek-"):
+                return None
+            return super()._count_tokens(messages, model)
+
         def _raw_model_call(self, model, chat_api_params):
             if "response_format" in chat_api_params:
                 params = dict(chat_api_params, response_format={"type": "json_object"})
