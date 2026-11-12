@@ -243,7 +243,8 @@ def _make_engine(config: dict, dm_provider=None):
     return engine, recorder
 
 
-def _visible_state(perception, tick: int, character_id: str) -> dict:
+def _visible_state(perception, tick: int, character_id: str,
+                   scene_context: str) -> dict:
     """AgentPerception → backend 既有 visible_state 键（接口零改动，R5）。"""
     self_state = perception.self_state or {}
     events = perception.events or []
@@ -253,6 +254,7 @@ def _visible_state(perception, tick: int, character_id: str) -> dict:
     return {
         "tick": tick,
         "location": self_state.get("location", ""),
+        "scene": scene_context,
         "character_id": character_id,
         "recent_events": recent,
     }
@@ -363,18 +365,20 @@ def run_world(store: Store, run_id: str, world_id: str,
         events.append(event)
         return event
 
+    scene_asset = _pinned_get(store, location_id, pins)
+    scene_context = scene_asset["name"]
     if not resume:
-        scene_asset = _pinned_get(store, location_id, pins)
         visual = scene_asset.get("appearance", {}).get("visual_prompt", "")
         emit(0, 0, "scene_change",
-             f"场景：{scene_asset['name']}。{visual}", character_ids)
+             f"场景：{scene_context}。{visual}", character_ids)
 
     end_tick = start_tick + ticks - 1
     for tick in range(start_tick, end_tick + 1):
         seq = 0
         for cid, spec in personas:
             perception = engine.perceive(cid)
-            actions = backend.act(spec, _visible_state(perception, tick, cid))
+            actions = backend.act(
+                spec, _visible_state(perception, tick, cid, scene_context))
             for action in actions:
                 seq += 1
                 engine_action = _map_to_engine_action(action)

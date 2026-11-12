@@ -15,6 +15,7 @@ from orchestrator.world import (
     WorldConfigError,
     WorldSnapshotError,
     _make_engine,
+    _visible_state,
     build_scene_config,
     run_world,
 )
@@ -97,6 +98,16 @@ def test_mock_dialogue_uses_character_name():
     assert action["kind"] == "dialogue"
     assert "孙悟空" in action["content"]
     assert "林昭" not in action["content"]
+
+
+def test_visible_state_carries_scene_context():
+    class Perception:
+        self_state = {"location": "scene_hall"}
+        events = []
+
+    state = _visible_state(Perception(), 1, "char_a", "花果山水帘洞")
+    assert state["location"] == "scene_hall"
+    assert state["scene"] == "花果山水帘洞"
 
 
 def test_world_loop_events_contract(store):

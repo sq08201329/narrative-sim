@@ -161,3 +161,11 @@ def test_frozen_act_uses_resource_root_and_restores_cwd(tmp_path, monkeypatch, b
     assert backend.act(PERSONA, STATE)[0]["content"] == "嗯。"
     assert os.getcwd() == original_cwd
     assert set(FakeTinyPerson.seen_cwds) == {str(frozen_root)}
+
+
+def test_scene_context_replaces_hardcoded_setting(backend):
+    FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "嗯。", "target": None}]
+    backend.act(PERSONA, dict(STATE, scene="花果山水帘洞"))
+    heard = backend._persons["char_su_wanqing"].last_heard
+    assert "花果山水帘洞" in heard
+    assert "南宋临安街市" not in heard

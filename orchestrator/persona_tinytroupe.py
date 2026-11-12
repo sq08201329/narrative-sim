@@ -28,8 +28,8 @@ MAX_ACT_RETRIES = 3
 # listen 文本，**不写进 persona 的 style 字段**——style 的契约是
 # speech_style 原样映射（test_speech_style_maps_to_style 守着这条）。
 LANGUAGE_LOCK = (
-    "本回合只用中文写内心独白、台词和动作描述（南宋临安街市白话，"
-    "可带浅白文言）；严禁日语假名（平假名/片假名）、日式语法助词、"
+    "本回合只用中文写内心独白、台词和动作描述，语言自然，"
+    "符合角色身份与当前场景；严禁日语假名（平假名/片假名）、日式语法助词、"
     "日文汉字词，也严禁整句英文或英文情绪词。"
 )
 
@@ -168,9 +168,10 @@ class TinyTroupeBackend(PersonaBackend):
 
     @staticmethod
     def _summarize_state(visible_state: dict) -> str:
+        scene = visible_state.get("scene") or visible_state.get("location", "未知")
         return (
             f"第 {visible_state.get('tick', '?')} 回合。"
-            f"地点：{visible_state.get('location', '未知')}。"
+            f"场景：{scene}。"
             f"{visible_state.get('recent_events', '')}"
             f"（{LANGUAGE_LOCK}）"
         )
