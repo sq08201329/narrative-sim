@@ -211,8 +211,13 @@ def test_seed_memory_deferred_until_person_created(backend):
     person = backend._persons["char_su_wanqing"]
     assert person.persona["age"] == 24  # persona 定义未被空壳抢占
     assert person.persona["occupation"] == "游方医者"
-    assert person.episodic_memory.stored == [
-        {"type": "observation", "content": "上一幕的经历：\n她救了人。"}]
+    # 须为 TinyTroupe 刺激消息结构（role=user + content.stimuli），
+    # 否则 act 渲染情景记忆时静默跳过。
+    (stored,) = person.episodic_memory.stored
+    assert stored["role"] == "user"
+    (stim,) = stored["content"]["stimuli"]
+    assert stim["content"] == "上一幕的经历：\n她救了人。"
+    assert stim["type"] == "MEMORY"
 
 
 def test_seed_memory_multiple_texts_keep_order(backend):
@@ -221,4 +226,4 @@ def test_seed_memory_multiple_texts_keep_order(backend):
     FakeTinyPerson.scripted_actions = [{"type": "TALK", "content": "嗯。", "target": None}]
     backend.act(PERSONA, STATE)
     stored = backend._persons["char_su_wanqing"].episodic_memory.stored
-    assert [s["content"] for s in stored] == ["第一段", "第二段"]
+    assert [s["content"]["stimuli"][0]["content"] for s in stored] == ["第一段", "第二段"]

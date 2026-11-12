@@ -170,9 +170,18 @@ class TinyTroupeBackend(PersonaBackend):
             if display_name:
                 person.define("name", display_name)
             for text in self._pending_seeds.pop(asset_id, []):
+                # 须与 TinyTroupe 刺激消息同构（role=user + content.stimuli），
+                # 否则 _render_recent_episodic_memories_for_prompt 静默跳过，
+                # 记忆进不了 act 的系统提示（resume 连续性修复的硬伤）。
                 person.episodic_memory.store({
-                    "type": "observation",
-                    "content": text,
+                    "role": "user",
+                    "content": {"stimuli": [{
+                        "type": "MEMORY",
+                        "content": text,
+                        "source": "前情提要",
+                    }]},
+                    "type": "stimulus",
+                    "simulation_timestamp": None,
                 })
             self._persons[asset_id] = person
         return person

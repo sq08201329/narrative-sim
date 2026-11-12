@@ -261,7 +261,9 @@ def _visible_state(perception, tick: int, character_id: str,
     }
 
 
-_RESUME_MEMORY_MAX_CHARS = 4000
+# TinyTroupe 逐条刺激渲染上限 MAX_CONTENT_DISPLAY_LENGTH=4000，
+# 连同前缀须留出余量，否则最新一行（最重要）会被截尾。
+_RESUME_MEMORY_MAX_CHARS = 3500
 _RESUME_PUBLIC_TYPES = ("scene_change", "dialogue", "action")
 
 
