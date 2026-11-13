@@ -1,5 +1,6 @@
 # 密钥与模型路由（宪章原则 VI：.env 必须忽略，只保留 .env.example）
 .env
+.env.bak
 
 # uv / Python
 .venv/
