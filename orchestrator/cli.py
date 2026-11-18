@@ -71,6 +71,25 @@ def build_parser() -> argparse.ArgumentParser:
     mcp.add_argument("--host", default=os.environ.get("MCP_HOST", "localhost"))
     mcp.add_argument("--port", type=_positive_int,
                      default=int(os.environ.get("MCP_PORT", "8300")))
+
+    timeline = commands.add_parser("timeline", help="故事时间树：抽取、自查与按树推进")
+    tl = timeline.add_subparsers(dest="timeline_command", required=True)
+    imp = tl.add_parser("import", help="从纯文本抽取时间树并自查入库")
+    imp.add_argument("tree_id")
+    imp.add_argument("--story", required=True, help="UTF-8 纯文本故事文件")
+    imp.add_argument("--overwrite", action="store_true")
+    show = tl.add_parser("show", help="查看时间树与自查报告")
+    show.add_argument("tree_id")
+    drive = tl.add_parser("drive", help="按树推进 research/world/run")
+    drive.add_argument("tree_id")
+    drive.add_argument("--stage", required=True, choices=["research", "world", "run"])
+    drive.add_argument("--world-id")
+    drive.add_argument("--run-id")
+    drive.add_argument("--ticks", type=_positive_int)
+    drive.add_argument("--backend", choices=["tinytroupe", "mock"], default="tinytroupe")
+    exp = tl.add_parser("export", help="导出时间树 JSON")
+    exp.add_argument("tree_id")
+    exp.add_argument("--out", required=True)
     commands.add_parser("_gptr", help=argparse.SUPPRESS)
     return parser
 
@@ -127,6 +146,21 @@ def _dispatch(args, home: Path, db: Path, library_db: Path):
                 memory_from=args.memory_from)
     if args.command == "export":
         return workflows.export_events(str(db), args.run_id, args.out)
+    if args.command == "timeline":
+        sub = args.timeline_command
+        if sub == "import":
+            text = Path(args.story).read_text(encoding="utf-8")
+            return workflows.import_timeline(str(db), args.tree_id, text,
+                                             overwrite=args.overwrite)
+        if sub == "show":
+            return workflows.show_timeline(str(db), args.tree_id)
+        if sub == "drive":
+            return workflows.drive_timeline(
+                str(db), args.tree_id, args.stage, world_id=args.world_id,
+                run_id=args.run_id, ticks=args.ticks, backend=args.backend)
+        if sub == "export":
+            return workflows.export_timeline(str(db), args.tree_id, args.out)
+        raise ValueError(f"未知 timeline 子命令: {sub}")
     if args.command in {"start", "stop", "restart", "status"}:
         from . import services
         return services.service_action(args.command, home, db)

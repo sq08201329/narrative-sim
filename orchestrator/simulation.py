@@ -26,6 +26,7 @@ def run_simulation(
     location_id: str,
     ticks: int,
     backend: PersonaBackend,
+    tick_to_node: dict[int, str] | None = None,
 ) -> list[dict]:
     store.create_run(run_id, world_id)
 
@@ -56,6 +57,8 @@ def run_simulation(
             "shot_hint": _SHOT_BY_KIND.get(etype, {"camera": "medium", "duration_s": 3.0}),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        if tick_to_node is not None and tick in tick_to_node:
+            event["node_id"] = tick_to_node[tick]
         store.put_event(event)
         events.append(event)
         return event

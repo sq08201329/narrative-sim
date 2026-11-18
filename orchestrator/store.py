@@ -562,6 +562,9 @@ class Store:
         events = [json.loads(r["payload"]) for r in rows]
         for ev in events:
             _validate(ev, "event.schema.json")
+        # 023：node_id 按节点顺序生成，与 tick 单调一致；无 node_id 的既有
+        # 事件以 "" 参与排序，等价于原 tick → seq，不改变既有管线消费顺序。
+        events.sort(key=lambda ev: (ev.get("node_id", ""), ev["tick"], ev["seq"]))
         return events
 
     def events_for_world(self, world_id: str) -> list[dict]:
@@ -678,3 +681,65 @@ class Store:
             d["event_refs"] = json.loads(d["event_refs"])
             out.append(d)
         return out
+
+    # ---- 故事时间树（023）----
+
+    def tree_exists(self, tree_id: str) -> bool:
+        return self._conn.execute(
+            "SELECT 1 FROM story_trees WHERE tree_id=?", (tree_id,)
+        ).fetchone() is not None
+
+    def put_tree(self, tree: dict, *, overwrite: bool = False) -> str:
+        """时间树唯一写入口：先校验 story_tree 契约，且 self_check.passed
+        必须为 true。重复 id 需 overwrite=True 才替换（FR-005/008）。"""
+        _validate(tree, "story_tree.schema.json")
+        if tree.get("self_check", {}).get("passed") is not True:
+            raise ValueError("时间树自查未通过，禁止入库")
+        tid = tree["tree_id"]
+        if self.tree_exists(tid) and not overwrite:
+            raise ValueError(f"tree_id 已存在: {tid}（overwrite=True 可覆盖）")
+        payload = json.dumps(tree, ensure_ascii=False)
+        nodes = tree["nodes"]
+        with self._conn:
+            if self.tree_exists(tid):
+                self._conn.execute("DELETE FROM story_nodes WHERE tree_id=?", (tid,))
+                self._conn.execute(
+                    "UPDATE story_trees SET payload=?, source_sha256=?, status=?,"
+                    " checked_at=? WHERE tree_id=?",
+                    (payload, tree["source_sha256"], tree["status"],
+                     tree["checked_at"], tid),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO story_trees(tree_id, payload, source_sha256,"
+                    " status, checked_at) VALUES(?,?,?,?,?)",
+                    (tid, payload, tree["source_sha256"], tree["status"],
+                     tree["checked_at"]),
+                )
+            for node in nodes:
+                self._conn.execute(
+                    "INSERT INTO story_nodes(tree_id, node_id, ord, payload)"
+                    " VALUES(?,?,?,?)",
+                    (tid, node["node_id"], node["ord"],
+                     json.dumps(node, ensure_ascii=False)),
+                )
+        return tid
+
+    def get_tree(self, tree_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT payload FROM story_trees WHERE tree_id=?", (tree_id,)
+        ).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def list_trees(self) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT payload FROM story_trees ORDER BY tree_id"
+        ).fetchall()
+        return [json.loads(r["payload"]) for r in rows]
+
+    def list_tree_nodes(self, tree_id: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT payload FROM story_nodes WHERE tree_id=? ORDER BY ord",
+            (tree_id,),
+        ).fetchall()
+        return [json.loads(r["payload"]) for r in rows]

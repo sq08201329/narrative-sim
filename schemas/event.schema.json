@@ -46,6 +46,10 @@
     "emotion": {
       "type": "string"
     },
+    "node_id": {
+      "type": "string",
+      "pattern": "^n[0-9]{4,}$"
+    },
     "cause_refs": {
       "type": "array",
       "items": {
