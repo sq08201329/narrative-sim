@@ -63,6 +63,17 @@ uv run narrative timeline export T001 --out exports/T001-tree.json
 排序不变。未 ready 的树执行 drive 会被拒绝且无副作用。长度上限默认 20000 字
 （环境变量 `STORY_TREE_MAX_CHARS` 可调整）。仿真事件用于正式产出仍需人工复核。
 
+### 创作工作目录约定
+
+创作团队用 `creative-assets` 技能管理按故事时间树整理的素材资产与工作目录（init 会分发该技能到
+`<HOME>/skills/creative-assets/`）。目录总览：`00_时间树/`（树与自查）、`01_节点/`（每节点一个
+目录，含 `node.json` 引用与 `派生/`）、`02_角色|03_场景|04_道具_<asset_id>/`（全局资产区）、
+`90_移交包/<world_id>/`。节点目录命名 `N{ord:04d}_{text_time或顺位}_{地点或事件短名}`。
+
+三条铁律：① `node_id` 是稳定键，可读后缀可改、id 不可变；② `ord` 全项目唯一；③ 资产本体
+全局唯一、只引用不复制，节点目录只放 `node.json` 与派生物。资产首次登场记 `first_seen_node`，
+后续节点只加引用。移交包自带 `WORKDIR.md`。完整规范见 `creative-assets` 技能。
+
 ## 可迁移安装
 
 WorldSeed、GPT-Researcher、gptr-mcp 和检索插件都在仓库的 uv workspace 中，新目录只需

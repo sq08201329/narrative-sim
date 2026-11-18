@@ -6,11 +6,13 @@ from .runtime import resource_root
 
 ROOT = resource_root()
 SKILL_SOURCE = ROOT / "resources" / "skills" / "narrative-sim" / "SKILL.md"
+CREATIVE_SKILL_SOURCE = ROOT / "resources" / "skills" / "creative-assets" / "SKILL.md"
 DIRECTORIES = ("data", "logs", "run", "models", "cache", "skills")
 TEMPLATES = (
     (Path("config.ini"), ROOT / "config.ini"),
     (Path(".env"), ROOT / ".env.example"),
     (Path("skills/narrative-sim/SKILL.md"), SKILL_SOURCE),
+    (Path("skills/creative-assets/SKILL.md"), CREATIVE_SKILL_SOURCE),
 )
 
 
