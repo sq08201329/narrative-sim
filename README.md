@@ -44,6 +44,25 @@ uv run narrative mcp                   # 前台 MCP；stdio 模式加 --transpor
 古籍库默认 `<home>/data/corpus.db`，可由 `CORPUS_DB` 覆盖。日志在 `<home>/logs`，
 受管服务状态在 `<home>/run`。原 `scripts/start_stack.ps1` 和各链路脚本继续保留。
 
+## 故事时间树（纯文本 → 时间线索引 → 按树推进）
+
+给一篇纯文本故事，系统按时间线抽取空间/人/事/物索引并回指原文，自动完成四项
+自查（schema、source_span 逐字回指、顺序、去重），全过才置 `ready`，无需人工复核：
+
+```bash
+uv run narrative timeline import T001 --story story.txt   # 抽取 + 自查
+uv run narrative timeline show T001                       # 查看树与自查报告
+uv run narrative timeline drive T001 --stage research     # 复用四层漏斗调研
+uv run narrative timeline drive T001 --stage world --world-id W001
+uv run narrative timeline drive T001 --stage run --run-id R001 --ticks 6 --backend mock
+uv run narrative timeline export T001 --out exports/T001-tree.json
+```
+
+树是原文事实的索引，不是剧本创作；仿真只在节点之间补细节，不改节点事实。树驱动
+的仿真事件带 `node_id`，`narrative export` 按 node_id → tick → seq 输出，既有事件的
+排序不变。未 ready 的树执行 drive 会被拒绝且无副作用。长度上限默认 20000 字
+（环境变量 `STORY_TREE_MAX_CHARS` 可调整）。仿真事件用于正式产出仍需人工复核。
+
 ## 可迁移安装
 
 WorldSeed、GPT-Researcher、gptr-mcp 和检索插件都在仓库的 uv workspace 中，新目录只需

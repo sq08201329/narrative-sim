@@ -50,7 +50,9 @@ EXPECTED_TOOLS = {"research_asset", "create_world", "run_simulation",
                   # 013 参考图
                   "generate_reference_image",
                   # 016 古籍文库
-                  "corpus_search", "corpus_browse"}
+                  "corpus_search", "corpus_browse",
+                  # 023 故事时间树
+                  "import_timeline", "show_timeline", "drive_timeline"}
 
 
 @pytest.fixture()

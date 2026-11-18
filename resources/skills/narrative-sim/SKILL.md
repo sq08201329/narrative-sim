@@ -85,6 +85,25 @@ narrative export R001 --out <HOME>/exports/R001.jsonl
 
 每行一个契约事件。视频或创作消费者只通过 asset_id 引用资产，不在事件中内联外貌文本。
 
+### 5. 故事时间树（纯文本整理时间线）
+
+把纯文本故事整理成按时间排列的空间/人/事/物索引，并用它驱动调研与仿真：
+
+```bash
+narrative timeline import T001 --story story.txt
+narrative timeline show T001
+narrative timeline drive T001 --stage research
+narrative timeline drive T001 --stage world --world-id W001
+narrative timeline drive T001 --stage run --run-id R001 --ticks 6 --backend mock
+narrative timeline export T001 --out <HOME>/exports/T001-tree.json
+```
+
+import 会自查四项（schema、原文逐字回指、顺序、去重），全过才入库并置 ready，
+不需要人工复核；失败会重试一次后拒绝且不写库。树只整理原文已有事实，不是剧本
+创作，仿真只补节点之间的细节。未 ready 的树不能 drive。树驱动事件的 `node_id`
+指向树节点，`narrative export` 按 node_id → tick → seq 输出。仿真事件用于正式
+产出仍需人工复核。长度上限默认 20000 字，可用 `STORY_TREE_MAX_CHARS` 调整。
+
 ## MCP
 
 前台启动：

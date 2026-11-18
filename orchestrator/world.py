@@ -340,7 +340,8 @@ def run_world(store: Store, run_id: str, world_id: str,
               backend: PersonaBackend, resume: bool = False,
               dm: DMOptions | None = None,
               dm_provider=None, pins: dict | None = None,
-              memory_from: str | None = None) -> list[dict]:
+              memory_from: str | None = None,
+              tick_to_node: dict[int, str] | None = None) -> list[dict]:
     """引擎驱动的世界循环；resume=True 时从 worlds.state 最近快照续跑。
 
     resume 续跑会把本世界历史事件经 backend.seed_memory 注入各角色
@@ -350,6 +351,8 @@ def run_world(store: Store, run_id: str, world_id: str,
     pins 非 None 时按修订版号取卡（011 世界冻结锚点）。
     memory_from 非 None 时注入上一幕记忆（012：后端 seed + 角色卡 memory
     键两路；无记忆的角色两路都跳过）。
+    tick_to_node 非 None 时给每个事件附加 node_id（023 时间树锚点）；
+    不传则事件无 node_id，行为与既有 run 完全一致。
     """
     memories: dict[str, str] | None = None
     if memory_from is not None:
@@ -418,6 +421,8 @@ def run_world(store: Store, run_id: str, world_id: str,
                 etype, {"camera": "medium", "duration_s": 3.0}),
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        if tick_to_node is not None and tick in tick_to_node:
+            event["node_id"] = tick_to_node[tick]
         store.put_event(event)
         events.append(event)
         return event

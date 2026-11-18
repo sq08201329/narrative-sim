@@ -118,6 +118,24 @@ CREATE TABLE IF NOT EXISTS image_generations (
     created_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_image_gen_asset ON image_generations(asset_id);
+
+-- 023 故事时间树：树头 + 节点（戏库同一存储域，入口 orchestrator/store.py）
+CREATE TABLE IF NOT EXISTS story_trees (
+    tree_id        TEXT PRIMARY KEY,
+    payload        TEXT NOT NULL,
+    source_sha256  TEXT NOT NULL,
+    status         TEXT NOT NULL DEFAULT 'ready',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    checked_at     TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS story_nodes (
+    tree_id  TEXT NOT NULL REFERENCES story_trees(tree_id),
+    node_id  TEXT NOT NULL,
+    ord      INTEGER NOT NULL,
+    payload  TEXT NOT NULL,
+    PRIMARY KEY (tree_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS idx_story_nodes_tree ON story_nodes(tree_id, ord);
 """
 
 

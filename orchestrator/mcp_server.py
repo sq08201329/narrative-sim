@@ -308,6 +308,42 @@ def build_server() -> FastMCP:
         finally:
             store.close()
 
+    # ---- 023：故事时间树（薄封装，业务在 workflows）----
+
+    @mcp.tool()
+    def import_timeline(tree_id: str, story_text: str,
+                        overwrite: bool = False) -> dict:
+        """从纯文本故事抽取时间树并自动自查（schema/逐字回指/顺序/去重）。
+        四项全过才入库并返回 {tree_id, status, node_count, checks}；失败非零且不写库。"""
+        try:
+            return workflows.import_timeline(_db_path(), tree_id, story_text,
+                                             overwrite=overwrite)
+        except Exception as e:
+            raise _fail(e) from e
+
+    @mcp.tool()
+    def show_timeline(tree_id: str) -> dict:
+        """查看时间树：节点、实体、自查报告与 research/world/run 阶段的锚点映射。"""
+        try:
+            return workflows.show_timeline(_db_path(), tree_id)
+        except Exception as e:
+            raise _fail(e) from e
+
+    @mcp.tool()
+    def drive_timeline(tree_id: str, stage: str,
+                       world_id: str | None = None,
+                       run_id: str | None = None,
+                       ticks: int | None = None,
+                       backend: str = "tinytroupe") -> dict:
+        """按时间树推进：stage=research（复用四层漏斗）/world（按空间建世界）/run（事件带 node_id）。
+        仅 ready 树可执行；world 需 world_id，run 需 run_id。"""
+        try:
+            return workflows.drive_timeline(
+                _db_path(), tree_id, stage, world_id=world_id, run_id=run_id,
+                ticks=ticks, backend=backend)
+        except Exception as e:
+            raise _fail(e) from e
+
     # ---- 011 US4：重拍 ----
     @mcp.tool()
     def reshoot(world_id: str, new_run_id: str, ticks: int,
