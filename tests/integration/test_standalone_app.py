@@ -167,8 +167,12 @@ def test_frozen_init_distributes_templates_without_overwrite(tmp_path):
     assert all(item["status"] == "created" for item in payload["files"])
     skill = home / "skills/narrative-sim/SKILL.md"
     assert skill.read_bytes() == (ROOT / "resources/skills/narrative-sim/SKILL.md").read_bytes()
+    # 024：creative-assets 技能同样随冻结包分发，开发与冻结字节一致
+    creative = home / "skills/creative-assets/SKILL.md"
+    assert creative.read_bytes() == (ROOT / "resources/skills/creative-assets/SKILL.md").read_bytes()
     assert (APP / ".env.example").is_file()
     assert (APP / "_internal/resources/skills/narrative-sim/SKILL.md").is_file()
+    assert (APP / "_internal/resources/skills/creative-assets/SKILL.md").is_file()
 
     skill.write_text("custom", encoding="utf-8")
     (home / ".env").write_text("custom", encoding="utf-8")

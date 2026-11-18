@@ -10,9 +10,11 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .runtime import resource_root
 from .store import Store
 
 FORMAT = "narrative-sim-handoff/1"
+_WORKDIR_SOURCE = resource_root() / "resources" / "skills" / "creative-assets" / "WORKDIR.md"
 
 _SECRECY = ("assets/*/persona_spec.secret 与 world.json 中的 secret "
             "为创作可见、仿真角色不可见信息；移交下游时请勿回灌仿真角色视野")
@@ -135,6 +137,13 @@ def export_handoff(store: Store, world_id: str, out_dir: str,
             lines.append(f"  - 原料「{m['query']}」via {m['retriever']}")
     _write(target / "sources.md", "\n".join(lines) + "\n",
            items, target, "sources")
+
+    # 创作工作目录规范（023 时间树的下游约定）：静态同源文本随移交包交付，
+    # 下游无需先 init；经 _write 计入 items 的 sha256 自描述，不改 counts 口径。
+    if _WORKDIR_SOURCE.is_file():
+        _write(target / "WORKDIR.md",
+               _WORKDIR_SOURCE.read_text(encoding="utf-8"),
+               items, target, "workdir")
 
     counts = {"assets": len(asset_ids), "events": len(events),
               "dm_calls": len(dm_calls), "materials": material_count,

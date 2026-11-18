@@ -81,6 +81,9 @@ def test_handoff_layout_and_manifest(store, tmp_path):
     assert (d / "dm_calls.json").exists()
     assert (d / "materials" / "char_a.md").exists()
     assert (d / "sources.md").exists()
+    # 024：工作目录规范随移交包交付
+    assert (d / "WORKDIR.md").exists()
+    assert "三条铁律" in (d / "WORKDIR.md").read_text(encoding="utf-8")
 
     manifest = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["format"] == "narrative-sim-handoff/1"
